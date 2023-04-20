@@ -13,12 +13,12 @@ classdef Setup
         b_f;
         % Rear track width [m]
         b_r;
-        % Total vehicle mass (dry, with driver) [kg]
-        m_dry = 0;
-        % Sprung mass [kg]
+        % Sprung mass at  zero fuel load [kg]
         m_sprung = 0;
-        % Unsprung mass [kg]
-        m_unsprung = 0;
+        % Unsprung mass for front axle [kg]
+        m_unsprung_f = 0;
+        % Unsprung mass for rear axle [kg]
+        m_unsprung_r = 0;
         % Sprung mass CoG distance from front axle [m]
         lm1 = 0;
         % Sprung mass CoG distance from rear axle [m]
@@ -158,7 +158,8 @@ classdef Setup
         % OUTPUTS:
         %   m: Total vehicle mass including fuel
         function m = totalMass(this)
-            m = this.m_dry + this.fuelMass(this.V_fuel);
+            m = this.m_sprung + this.m_unsprung_f + this.m_unsprung_r + ...
+                this.fuelMass(this.V_fuel);
         end
 
         % fuelMass
