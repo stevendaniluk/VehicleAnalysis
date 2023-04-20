@@ -21,8 +21,6 @@ classdef Setup
         m_unsprung_r = 0;
         % Sprung mass CoG distance from front axle [m]
         lm1 = 0;
-        % Sprung mass CoG distance from rear axle [m]
-        lm2 = 0;
         % Sprung mass CoG height above the ground [m]
         h_sprung;
         % Rotational inertia about the Z axis
@@ -33,8 +31,6 @@ classdef Setup
         V_fuel = 0;
         % Fuel tank CoG distance from front axle [m]
         lf1 = 0;
-        % Fuel tank CoG distance from rear axle [m]
-        lf2 = 0;
         % Fuel tank CoG height above the ground [m]
         h_fuel;
 
@@ -177,11 +173,11 @@ classdef Setup
         % Computes the ride height offset for the current ride height and
         % estimated damper position from the sprung mass and fuel load.
         function this = setRideHeightOffset(this)
-            F_fuel_f = this.V_fuel * this.p_fuel * this.g * (this.lf2 / this.L);
-            F_fuel_r = this.V_fuel * this.p_fuel * this.g * (this.lf1 / this.L);
+            F_fuel_f = this.V_fuel * this.p_fuel * this.g * (this.L - this.lf1) / this.L;
+            F_fuel_r = this.V_fuel * this.p_fuel * this.g * this.lf1 / this.L;
 
-            F_sprung_f = this.m_sprung * this.g * (this.lm2 / this.L);
-            F_sprung_r = this.m_sprung * this.g * (this.lm1 / this.L);
+            F_sprung_f = this.m_sprung * this.g * (this.L - this.lm1) / this.L;
+            F_sprung_r = this.m_sprung * this.g * this.lm1 / this.L;
 
             xf_pred = 1e3 * this.wheelToDamperForce(0.5 * (F_fuel_f + F_sprung_f), true) / ...
                 this.kspring_f;
@@ -264,9 +260,9 @@ classdef Setup
 
             % Subtract the sprung mass and fuel level
             F_sprung_f = this.m_sprung * this.g * this.lm1 / this.L;
-            F_sprung_r = this.m_sprung * this.g * this.lm2 / this.L;
+            F_sprung_r = this.m_sprung * this.g * (this.L - this.lm1) / this.L;
 
-            F_fuel_f = this.p_fuel * this.V_fuel * this.g * this.lf2 / this.L;
+            F_fuel_f = this.p_fuel * this.V_fuel * this.g * (this.L - this.lf1) / this.L;
             F_fuel_r = this.p_fuel * this.V_fuel * this.g * this.lf1 / this.L;
 
             D_f = F_total_f - F_sprung_f - F_fuel_f;
