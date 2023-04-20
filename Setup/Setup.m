@@ -141,14 +141,14 @@ classdef Setup
 
     methods
 
-        % steerToWheelAngle
+        % steerToWheelAngles
         %
         % INPUTS:
         %   delta: Steering wheel angle (+ve turns right) [rad]
         % OUTPUTS:
         %   delta_wheel_FL: Front left wheel angle (+ve turns right) [rad]
         %   delta_wheel_FR: Front right wheel angle (+ve turns right) [rad]
-        function [delta_wheel_FL, delta_wheel_FR] = steerToWheelAngle(this, delta)
+        function [delta_wheel_FL, delta_wheel_FR] = steerToWheelAngles(this, delta)
             delta_wheel_FL = delta / this.steer_ratio - this.toe_f;
             delta_wheel_FR = delta / this.steer_ratio + this.toe_f;
         end
@@ -375,7 +375,7 @@ classdef Setup
             RR = [v - vx_r_rel; -vy_rel];
 
             % Get the angle of each wheel
-            [delta_wheel_FL, delta_wheel_FR] = this.steerToWheelAngle(delta);
+            [delta_wheel_FL, delta_wheel_FR] = this.steerToWheelAngles(delta);
             delta_wheel_RL = -this.toe_r;
             delta_wheel_RR = this.toe_r;
 

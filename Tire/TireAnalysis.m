@@ -183,7 +183,7 @@ classdef TireAnalysis < handle
 
             % Wheel angles with respect to vehicle body
             [delta_steer_in, ~] = handler.getSteeringWheelAngle();
-            [delta_wheel_FL, delta_wheel_FR] = setup.steerToWheelAngle(delta_steer_in);
+            [delta_wheel_FL, delta_wheel_FR] = setup.steerToWheelAngles(delta_steer_in);
             delta_wheel_RL = -setup.toe_r * ones(size(delta_steer_in));
             delta_wheel_RR = setup.toe_r * ones(size(delta_steer_in));
 
