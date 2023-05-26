@@ -21,7 +21,7 @@ classdef Setup
         m_unsprung_r = 0;
         % Sprung mass CoG distance from front axle [m]
         lm1 = 0;
-        % Sprung mass CoG height above the ground [m]
+        % Sprung mass CoG height for a ride height of zero [m]
         h_sprung;
         % Rotational inertia about the Z axis
         Iz = 0;
@@ -31,7 +31,7 @@ classdef Setup
         V_fuel = 0;
         % Fuel tank CoG distance from front axle [m]
         lf1 = 0;
-        % Fuel tank CoG height above the ground [m]
+        % Fuel tank CoG height for a ride height of zero [m]
         h_fuel;
 
         %%%%%%%%%%%%%%%%%%%%%%%%%
@@ -51,12 +51,6 @@ classdef Setup
         %%%%%%%%%%%%%%%%%%%%%%%%%
         % Suspension
 
-        % Static ride heights [mm]
-        RH_f_static = 0;
-        RH_r_static  = 0;
-        % Ride height at the neutral damper position [mm]
-        RH0_f = 0;
-        RH0_r = 0;
         % Neutral damper positions [mm]
         xf0 = 0;
         xr0 = 0;
@@ -125,6 +119,14 @@ classdef Setup
         wing_rear = 0;
     end
 
+    properties (Access = private)
+        % Ride height at zero damper positions [mm]
+        RH_0_fl = 0;
+        RH_0_fr = 0;
+        RH_0_rl = 0;
+        RH_0_rr = 0;
+    end
+
     properties (Constant)
         %%%%%%%%%%%%%%%%%%%%%%%%%
         % Environment
@@ -136,6 +138,25 @@ classdef Setup
     end
 
     methods
+
+        % setReferenceRideHeight
+        %
+        % Provides a baseline measurement for ride height given damper positions, from
+        % which the ride height can be computed for any damper position.
+        %
+        % INPUTS:
+        %   RH_f: Front ride height
+        %   RH_r: Rear ride height
+        %   x_fl: FL damper position
+        %   x_fr: FR damper position
+        %   x_rl: RL damper position
+        %   x_rr: RR damper position
+        function this = setReferenceRideHeight(RH_f, RH_r, x_fl, x_fr, x_rl, x_rr)
+            RH_0_fl = RH_f + this.MR_spring_f * x_fl;
+            RH_0_fr = RH_f + this.MR_spring_f * x_fr;
+            RH_0_rl = RH_r + this.MR_spring_r * x_rl;
+            RH_0_rr = RH_r + this.MR_spring_r * x_rr;
+        end
 
         % steerToWheelAngles
         %
@@ -168,26 +189,6 @@ classdef Setup
             m = this.p_fuel * V_fuel;
         end
 
-        % setRideHeightOffset
-        %
-        % Computes the ride height offset for the current ride height and
-        % estimated damper position from the sprung mass and fuel load.
-        function this = setRideHeightOffset(this)
-            F_fuel_f = this.V_fuel * this.p_fuel * this.g * (this.L - this.lf1) / this.L;
-            F_fuel_r = this.V_fuel * this.p_fuel * this.g * this.lf1 / this.L;
-
-            F_sprung_f = this.m_sprung * this.g * (this.L - this.lm1) / this.L;
-            F_sprung_r = this.m_sprung * this.g * this.lm1 / this.L;
-
-            xf_pred = 1e3 * this.wheelToDamperForce(0.5 * (F_fuel_f + F_sprung_f), true) / ...
-                this.kspring_f;
-            xr_pred = 1e3 * this.wheelToDamperForce(0.5 * (F_fuel_r + F_sprung_r), false) / ...
-                this.kspring_r;
-
-            this.RH0_f = this.RH_f_static + this.MR_spring_f  * xf_pred;
-            this.RH0_r = this.RH_r_static + this.MR_spring_r * xr_pred;
-        end
-
         % rakeFromRideHeights
         %
         % INPUTS:
@@ -218,27 +219,55 @@ classdef Setup
         % rideHeightFromDamperPos
         %
         % INPUTS:
-        %   xf: Front damper position
-        %   xr: Rear damper position
+        %   x_fl: Front left damper position
+        %   x_fr: Front right damper position
+        %   x_rl: Rear left damper position
+        %   x_rr: Rear right damper position
         % OUTPUTS:
-        %   RH_f: Front ride height
-        %   RH_r: Rear ride height
-        function [RH_f, RH_r] = rideHeightFromDamperPos(this, xf, xr)
-            RH_f = this.RH0_f - this.MR_spring_f * xf;
-            RH_r = this.RH0_r - this.MR_spring_r * xr;
+        %   RH_fl: Front left ride height
+        %   RH_fr: Front right ride height
+        %   RH_rl: Rear left ride height
+        %   RH_rr: Rear right ride height
+        function [RH_fl, RH_fr, RH_rl, RH_rr] = rideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
+            RH_fl = this.RH_0_fl - x_fl * this.MR_spring_f;
+            RH_fr = this.RH_0_fr - x_fr * this.MR_spring_f;
+            RH_rl = this.RH_0_rl - x_rl * this.MR_spring_r;
+            RH_rr = this.RH_0_rr - x_rr * this.MR_spring_r;
+        end
+
+        % avgRideHeightFromDamperPos
+        %
+        % INPUTS:
+        %   x_fl: Front left damper position
+        %   x_fr: Front right damper position
+        %   x_rl: Rear left damper position
+        %   x_rr: Rear right damper position
+        % OUTPUTS:
+        %   RH_f: Average front ride height
+        %   RH_r: Average rear ride height
+        function [RH_f, RH_r] = avgRideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
+            [RH_fl, RH_fr, RH_rl, RH_rr] = rideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
+            RH_f = (RH_fl + RH_fr) ./ 2;
+            RH_r = (RH_rl + RH_rr) ./ 2;
         end
 
         % damperPosFromRideHeight
         %
         % INPUTS:
-        %   RH_f: Front ride height
-        %   RH_r: Rear ride height
+        %   RH_fl: Front left ride height
+        %   RH_fr: Front right ride height
+        %   RH_rl: Rear left ride height
+        %   RH_rr: Rear right ride height
         % OUTPUTS:
-        %   xf: Front damper position
-        %   xr: Rear damper position
-        function [xf, xr] = damperPosFromRideHeight(this, RH_f, RH_r)
-            xf = (this.RH0_f - RH_f) / this.MR_spring_f;
-            xr = (this.RH0_r - RH_r) / this.MR_spring_r;
+        %   x_fl: Front left damper position
+        %   x_fr: Front right damper position
+        %   x_rl: Rear left damper position
+        %   x_rr: Rear right damper position
+        function [x_fl, x_fr, x_rl, x_rr] = damperPosFromRideHeight(this, RH_fl, RH_fr, RH_rl, RH_rr)
+            x_fl = (this.RH_0_fl - RH_fl) ./ this.MR_spring_f;
+            x_fr = (this.RH_0_fr - RH_fr) ./ this.MR_spring_f;
+            x_rl = (this.RH_0_rl - RH_rl) ./ this.MR_spring_r;
+            x_rr = (this.RH_0_rr - RH_rr) ./ this.MR_spring_r;
         end
 
         % downforceFromDamperPos
