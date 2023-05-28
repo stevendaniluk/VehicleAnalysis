@@ -139,35 +139,32 @@ classdef TireAnalysis < handle
             [x_RR, ~] = handler.getDamperPosRR();
 
             % Wheel normal loads
-            Fz_FL = setup.damperToWheelForce(setup.springForce(x_FL, true), true);
+            Fz_FL = setup.FL_corner.springToWheelForce(setup.FL_corner.damperPosToSpringForce(x_FL));
             this.FL.Fz = [this.FL.Fz, Fz_FL];
 
-            Fz_FR = setup.damperToWheelForce(setup.springForce(x_FR, true), true);
+            Fz_FR = setup.FR_corner.springToWheelForce(setup.FR_corner.damperPosToSpringForce(x_FR));
             this.FR.Fz = [this.FR.Fz, Fz_FR];
 
-            Fz_RL = setup.damperToWheelForce(setup.springForce(x_RL, false), false);
+            Fz_RL = setup.RL_corner.springToWheelForce(setup.RL_corner.damperPosToSpringForce(x_RL));
             this.RL.Fz = [this.RL.Fz, Fz_RL];
 
-            Fz_RR = setup.damperToWheelForce(setup.springForce(x_RR, false), false);
+            Fz_RR = setup.RR_corner.springToWheelForce(setup.RR_corner.damperPosToSpringForce(x_RR));
             this.RR.Fz = [this.RR.Fz, Fz_RR];
 
             % Rake angle
-            x_F = 0.5 * (x_FL + x_FR);
-            x_R = 0.5 * (x_RL + x_RR);
-            [RH_f, RH_r] = setup.rideHeightFromDamperPos(x_F, x_R);
+            [RH_f, RH_r] = setup.avgRideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
             rake = setup.rakeFromRideHeights(RH_f, RH_r);
 
             % Roll angle
-            [RH_FL, RH_RL] = setup.rideHeightFromDamperPos(x_FL, x_RL);
-            [RH_FR, RH_RR] = setup.rideHeightFromDamperPos(x_FR, x_RR);
-            this.roll_f = deg2rad(setup.rollFromRideHeights(RH_FL, RH_FR, true));
-            this.roll_r = deg2rad(setup.rollFromRideHeights(RH_RL, RH_RR, false));
+            [RH_FL, RH_FR, RH_RL, RH_RR] = setup.rideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
+            this.roll_f = deg2rad(setup.rollFromFrontRideHeights(RH_FL, RH_FR));
+            this.roll_r = deg2rad(setup.rollFromRearRideHeights(RH_RL, RH_RR));
 
             % Camber
-            this.FL.gamma = [this.FL.gamma, -setup.camber_f * ones(1, n_in) + this.roll_f];
-            this.FR.gamma = [this.FR.gamma, setup.camber_f * ones(1, n_in) + this.roll_f];
-            this.RL.gamma = [this.RL.gamma, -setup.camber_r * ones(1, n_in) + this.roll_r];
-            this.RR.gamma = [this.RR.gamma, setup.camber_r * ones(1, n_in) + this.roll_r];
+            this.FL.gamma = [this.FL.gamma, -setup.FL_corner.camber * ones(1, n_in) + this.roll_f];
+            this.FR.gamma = [this.FR.gamma, setup.FR_corner.camber * ones(1, n_in) + this.roll_f];
+            this.RL.gamma = [this.RL.gamma, -setup.RL_corner.camber * ones(1, n_in) + this.roll_r];
+            this.RR.gamma = [this.RR.gamma, setup.RR_corner.camber * ones(1, n_in) + this.roll_r];
 
             % Body longitudinal and lateral forces, need to correct longitudinal force for
             % aerodynamic drag force drag
@@ -184,8 +181,8 @@ classdef TireAnalysis < handle
             % Wheel angles with respect to vehicle body
             [delta_steer_in, ~] = handler.getSteeringWheelAngle();
             [delta_wheel_FL, delta_wheel_FR] = setup.steerToWheelAngles(delta_steer_in);
-            delta_wheel_RL = -setup.toe_r * ones(size(delta_steer_in));
-            delta_wheel_RR = setup.toe_r * ones(size(delta_steer_in));
+            delta_wheel_RL = -setup.RL_corner.toe * ones(size(delta_steer_in));
+            delta_wheel_RR = setup.RR_corner.toe * ones(size(delta_steer_in));
 
             this.FL.delta = [this.FL.delta, delta_wheel_FL];
             this.FR.delta = [this.FR.delta, delta_wheel_FR];

@@ -35,43 +35,19 @@ classdef Setup
         h_fuel;
 
         %%%%%%%%%%%%%%%%%%%%%%%%%
-        % Wheel Geometry
+        % Suspension and Wheel Geometry
 
-        % Toe angle [rad] (-ve is toe in)
-        toe_f = 0;
-        toe_r = 0;
-        % Camber angle [rad] (-ve is angled in)
-        camber_f = 0;
-        camber_r = 0;
-        % Caster angle [rad] (+ve is inclined rearwards)
-        caster = 0;
         % Steering ratio (input/output)
         steer_ratio = 1;
+        % Ackermann ratio [0, 1]
+        % (0.0 --> wheel angles are equal, 1.0 --> coincident IC's)
+        ackermann = 0;
 
-        %%%%%%%%%%%%%%%%%%%%%%%%%
-        % Suspension
-
-        % Neutral damper positions [mm]
-        xf0 = 0;
-        xr0 = 0;
-        % Damper/spring motion ratios
-        MR_spring_f = 1;
-        MR_spring_r = 1;
-        % ARB motion ratios
-        MR_arb_f = 1;
-        MR_arb_r = 1;
-        % Suspension spring rates [N/m]
-        kspring_f = 0;
-        kspring_r = 0;
-        % Wheel spring rates [N/m]
-        kspring_wheel_f = 0;
-        kspring_wheel_r = 0;
-        % ARB rates [N/m]
-        karb_f = 0;
-        karb_r = 0;
-        % Wheel ARB rates [N/m]
-        karb_wheel_f = 0;
-        karb_wheel_r = 0;
+        % Suspension and geometry for individual corners
+        FL_corner = Corner();
+        FR_corner = Corner();
+        RL_corner = Corner();
+        RR_corner = Corner();
 
         %%%%%%%%%%%%%%%%%%%%%%%%%
         % Aerodynamics
@@ -138,26 +114,6 @@ classdef Setup
     end
 
     methods
-
-        % setReferenceRideHeight
-        %
-        % Provides a baseline measurement for ride height given damper positions, from
-        % which the ride height can be computed for any damper position.
-        %
-        % INPUTS:
-        %   RH_f: Front ride height
-        %   RH_r: Rear ride height
-        %   x_fl: FL damper position
-        %   x_fr: FR damper position
-        %   x_rl: RL damper position
-        %   x_rr: RR damper position
-        function this = setReferenceRideHeight(RH_f, RH_r, x_fl, x_fr, x_rl, x_rr)
-            RH_0_fl = RH_f + this.MR_spring_f * x_fl;
-            RH_0_fr = RH_f + this.MR_spring_f * x_fr;
-            RH_0_rl = RH_r + this.MR_spring_r * x_rl;
-            RH_0_rr = RH_r + this.MR_spring_r * x_rr;
-        end
-
         % steerToWheelAngles
         %
         % INPUTS:
@@ -166,8 +122,8 @@ classdef Setup
         %   delta_wheel_FL: Front left wheel angle (+ve turns right) [rad]
         %   delta_wheel_FR: Front right wheel angle (+ve turns right) [rad]
         function [delta_wheel_FL, delta_wheel_FR] = steerToWheelAngles(this, delta)
-            delta_wheel_FL = delta / this.steer_ratio - this.toe_f;
-            delta_wheel_FR = delta / this.steer_ratio + this.toe_f;
+            delta_wheel_FL = delta / this.steer_ratio - this.FL_corner.toe;
+            delta_wheel_FR = delta / this.steer_ratio + this.FR_corner.toe;
         end
 
         % totalMass
@@ -189,31 +145,23 @@ classdef Setup
             m = this.p_fuel * V_fuel;
         end
 
-        % rakeFromRideHeights
+        % setReferenceRideHeight
+        %
+        % Provides a baseline measurement for ride height given damper positions, from
+        % which the ride height can be computed for any damper position.
         %
         % INPUTS:
-        %   RH_f: Front ride height [mm]
-        %   RH_r: Rear ride height [mm]
-        % OUTPUTS:
-        %   rake: Rake angle [deg]
-        function rake = rakeFromRideHeights(this, RH_f, RH_r)
-            rake = atan2d(1e-3 * (RH_r - RH_f), this.L);
-        end
-
-        % rollFromRideHeights
-        %
-        % INPUTS:
-        %   RH_l: Left ride height [mm]
-        %   RH_r: Right ride height [mm]
-        %   front: True for front axle, false for rear axle
-        % OUTPUTS:
-        %   roll: Roll angle [deg]
-        function roll = rollFromRideHeights(this, RH_l, RH_r, front)
-            if front
-                roll = atan2d(1e-3 * (RH_l - RH_r), this.b_f);
-            else
-                roll = atan2d(1e-3 * (RH_l - RH_r), this.b_r);
-            end
+        %   RH_f: Front ride height
+        %   RH_r: Rear ride height
+        %   x_fl: FL damper position
+        %   x_fr: FR damper position
+        %   x_rl: RL damper position
+        %   x_rr: RR damper position
+        function this = setReferenceRideHeight(RH_f, RH_r, x_fl, x_fr, x_rl, x_rr)
+            RH_0_fl = RH_f + this.FL_corner.MR_spring * (x_fl - this.FL_corner.x0);
+            RH_0_fr = RH_f + this.FR_corner.MR_spring * (x_fr - this.FR_corner.x0);
+            RH_0_rl = RH_r + this.RL_corner.MR_spring * (x_rl - this.RL_corner.x0);
+            RH_0_rr = RH_r + this.RR_corner.MR_spring * (x_rr - this.RR_corner.x0);
         end
 
         % rideHeightFromDamperPos
@@ -229,10 +177,10 @@ classdef Setup
         %   RH_rl: Rear left ride height
         %   RH_rr: Rear right ride height
         function [RH_fl, RH_fr, RH_rl, RH_rr] = rideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
-            RH_fl = this.RH_0_fl - x_fl * this.MR_spring_f;
-            RH_fr = this.RH_0_fr - x_fr * this.MR_spring_f;
-            RH_rl = this.RH_0_rl - x_rl * this.MR_spring_r;
-            RH_rr = this.RH_0_rr - x_rr * this.MR_spring_r;
+            RH_fl = this.RH_0_fl - (x_fl - this.FL_corner.x0) * this.FL_corner.MR_spring;
+            RH_fr = this.RH_0_fr - (x_fr - this.FR_corner.x0) * this.FR_corner.MR_spring;
+            RH_rl = this.RH_0_rl - (x_rl - this.RL_corner.x0) * this.RL_corner.MR_spring;
+            RH_rr = this.RH_0_rr - (x_rr - this.RR_corner.x0) * this.RR_corner.MR_spring;
         end
 
         % avgRideHeightFromDamperPos
@@ -246,7 +194,7 @@ classdef Setup
         %   RH_f: Average front ride height
         %   RH_r: Average rear ride height
         function [RH_f, RH_r] = avgRideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
-            [RH_fl, RH_fr, RH_rl, RH_rr] = rideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
+            [RH_fl, RH_fr, RH_rl, RH_rr] = rideHeightFromDamperPos(this, x_fl, x_fr, x_rl, x_rr);
             RH_f = (RH_fl + RH_fr) ./ 2;
             RH_r = (RH_rl + RH_rr) ./ 2;
         end
@@ -264,10 +212,43 @@ classdef Setup
         %   x_rl: Rear left damper position
         %   x_rr: Rear right damper position
         function [x_fl, x_fr, x_rl, x_rr] = damperPosFromRideHeight(this, RH_fl, RH_fr, RH_rl, RH_rr)
-            x_fl = (this.RH_0_fl - RH_fl) ./ this.MR_spring_f;
-            x_fr = (this.RH_0_fr - RH_fr) ./ this.MR_spring_f;
-            x_rl = (this.RH_0_rl - RH_rl) ./ this.MR_spring_r;
-            x_rr = (this.RH_0_rr - RH_rr) ./ this.MR_spring_r;
+            x_fl = (this.RH_0_fl - RH_fl) ./ this.FL_corner.MR_spring + this.FL_corner.x0;
+            x_fr = (this.RH_0_fr - RH_fr) ./ this.FR_corner.MR_spring + this.FR_corner.x0;
+            x_rl = (this.RH_0_rl - RH_rl) ./ this.RL_corner.MR_spring + this.RL_corner.x0;
+            x_rr = (this.RH_0_rr - RH_rr) ./ this.RR_corner.MR_spring + this.RR_corner.x0;
+        end
+
+        % rakeFromRideHeights
+        %
+        % INPUTS:
+        %   RH_f: Front ride height [mm]
+        %   RH_r: Rear ride height [mm]
+        % OUTPUTS:
+        %   rake: Rake angle [deg]
+        function rake = rakeFromRideHeights(this, RH_f, RH_r)
+            rake = atan2d(1e-3 * (RH_r - RH_f), this.L);
+        end
+
+        % rollFromFrontRideHeights
+        %
+        % INPUTS:
+        %   RH_fl: Front left ride height [mm]
+        %   RH_fr: Front right ride height [mm]
+        % OUTPUTS:
+        %   roll: Roll angle [deg]
+        function roll = rollFromFrontRideHeights(this, RH_fl, RH_fr)
+            roll = atan2d(1e-3 * (RH_fl - RH_fr), this.b_f);
+        end
+
+        % rollFromRearRideHeights
+        %
+        % INPUTS:
+        %   RH_rl: Rear left ride height [mm]
+        %   RH_rr: Rear right ride height [mm]
+        % OUTPUTS:
+        %   roll: Roll angle [deg]
+        function roll = rollFromRearRideHeights(this, RH_rl, RH_rr)
+            roll = atan2d(1e-3 * (RH_rl - RH_rr), this.b_r);
         end
 
         % downforceFromDamperPos
@@ -277,15 +258,22 @@ classdef Setup
         % fuel level. It will not account for any weight transfer.
         %
         % INPUTS:
-        %   xf: Front damper position
-        %   xr: Rear damper position
+        %   x_fl: Front left damper position
+        %   x_fr: Front right damper position
+        %   x_rl: Rear left damper position
+        %   x_rr: Rear right damper position
         % OUTPUTS:
         %   F: Total downforce [N]
         %   balance: Fraction of total downforce on front axle
-        function [F, balance] = downforceFromDamperPos(this, xf, xr)
+        function [F, balance] = downforceFromDamperPos(this, x_fl, x_fr, x_rl, x_rr)
             % Compute the total force on the springs
-            F_total_f = 2 * this.damperToWheelForce(this.springForce(xf, true), true);
-            F_total_r = 2 * this.damperToWheelForce(this.springForce(xr, false), false);
+            F_k_FL = this.FL_corner.springToWheelForce(this.FL_corner.damperPosToSpringForce(x_fl));
+            F_k_FR = this.FR_corner.springToWheelForce(this.FR_corner.damperPosToSpringForce(x_fr));
+            F_k_RL = this.RL_corner.springToWheelForce(this.RL_corner.damperPosToSpringForce(x_rl));
+            F_k_RR = this.RR_corner.springToWheelForce(this.RR_corner.damperPosToSpringForce(x_rr));
+
+            F_total_f = F_k_FL + F_k_FR;
+            F_total_r = F_k_RL + F_k_RR;
 
             % Subtract the sprung mass and fuel level
             F_sprung_f = this.m_sprung * this.g * this.lm1 / this.L;
@@ -298,69 +286,6 @@ classdef Setup
             D_r = F_total_r - F_sprung_r - F_fuel_r;
             F = D_f + D_r;
             balance = D_f ./ (D_f + D_r);
-        end
-
-        % setWheelRatesFromSprings
-        %
-        % Sets the wheel rate (kspring_wheel_f/r) based on the spring rate the
-        % the damper (kspring_f/r) and the motion rate (MR_spring_f/r).
-        function this = setWheelRatesFromSprings(this)
-            this.kspring_wheel_f = this.MR_spring_f^2 * this.kspring_f;
-            this.kspring_wheel_r = this.MR_spring_r^2 * this.kspring_r;
-        end
-
-        % setSpringRatesFromWheel
-        %
-        % Sets the spring rate at the damper (kspring_f/r) based on the spring
-        % rate at the wheel(kspring_wheel_f/r) and the motion rate (MR_spring_f/r).
-        function this = setSpringRatesFromWheel(this)
-            this.kspring_f = this.kspring_wheel_f / this.MR_spring_f^2;
-            this.kspring_r = this.kspring_wheel_r / this.MR_spring_r^2;
-        end
-
-        % springForce
-        %
-        % INPUTS:
-        %   x: Damper position [mm]
-        %   front: True for front springs, false for rear springs
-        % OUTPUTS:
-        %   F: Force at damper due to srping
-        function F = springForce(this, x, front)
-            if front
-                F = 1e-3 * (x - this.xf0) * this.kspring_f;
-            else
-                F = 1e-3 * (x - this.xr0) * this.kspring_r;
-            end
-        end
-
-        % damperToWheelForce
-        %
-        % INPUTS:
-        %   F: Force at damper
-        %   front: True for front springs, false for rear springs
-        % OUTPUTS:
-        %   F: Equivalent force at wheel
-        function F = damperToWheelForce(this, F, front)
-            if front
-                F = this.MR_spring_f^2 * F;
-            else
-                F = this.MR_spring_r^2 * F;
-            end
-        end
-
-        % wheelToDamperForce
-        %
-        % INPUTS:
-        %   F: Force at wheel
-        %   front: True for front springs, false for rear springs
-        % OUTPUTS:
-        %   F: Equivalent force at damper
-        function F = wheelToDamperForce(this, F, front)
-            if front
-                F = F / this.MR_spring_f^2;
-            else
-                F = F / this.MR_spring_r^2;
-            end
         end
 
         % aeroForceCoefficient
@@ -402,8 +327,8 @@ classdef Setup
 
             % Get the angle of each wheel
             [delta_wheel_FL, delta_wheel_FR] = this.steerToWheelAngles(delta);
-            delta_wheel_RL = -this.toe_r;
-            delta_wheel_RR = this.toe_r;
+            delta_wheel_RL = -this.RL_corner.toe;
+            delta_wheel_RR = this.RR_corner.toe;
 
             % Correct the wheel velocities for the wheel angles
             c_delta = cos(-delta_wheel_FL);
