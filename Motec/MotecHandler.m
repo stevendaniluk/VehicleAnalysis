@@ -156,15 +156,28 @@ classdef MotecHandler
             end
         end
 
-        % getSpeed
+        % getGroundSpeed
         %
         % INPUTS:
         %   t_start: Beginning of time range to extract (optional) [s]
         %   t_end: End of time range to extract (optional) [s]
         % OUTPUTS:
-        %   v: Velocity [m/s]
+        %   v: Ground velocity [m/s]
         %   t: Timestamps [s]
-        function [v, t] = getSpeed(this, varargin)
+        function [v, t] = getGroundSpeed(this, varargin)
+            v = [];
+            t = [];
+        end
+
+        % getAirSpeed
+        %
+        % INPUTS:
+        %   t_start: Beginning of time range to extract (optional) [s]
+        %   t_end: End of time range to extract (optional) [s]
+        % OUTPUTS:
+        %   v: Freestream velocity [m/s]
+        %   t: Timestamps [s]
+        function [v, t] = getAirSpeed(this, varargin)
             v = [];
             t = [];
         end
@@ -192,6 +205,32 @@ classdef MotecHandler
         %   t: Timestamps [s]
         function [a, t] = getLateralAccel(this, varargin)
             a = [];
+            t = [];
+        end
+
+        % getRollRate
+        %
+        % INPUTS:
+        %   t_start: Beginning of time range to extract (optional) [s]
+        %   t_end: End of time range to extract (optional) [s]
+        % OUTPUTS:
+        %   w: Angular velocity about the X axis (+ve RH side downwards) [rad/s]
+        %   t: Timestamps [s]
+        function [w, t] = getRollRate(this, varargin)
+            w = [];
+            t = [];
+        end
+
+        % getPitchRate
+        %
+        % INPUTS:
+        %   t_start: Beginning of time range to extract (optional) [s]
+        %   t_end: End of time range to extract (optional) [s]
+        % OUTPUTS:
+        %   w: Angular velocity about the Y axis (+ve pitch upwards) [rad/s]
+        %   t: Timestamps [s]
+        function [w, t] = getPitchRate(this, varargin)
+            w = [];
             t = [];
         end
 
@@ -298,32 +337,6 @@ classdef MotecHandler
             t = [];
         end
 
-        % getDamperPosAvgF
-        %
-        % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
-        % OUTPUTS:
-        %   x: Average FL and FR damper position [mm]
-        %   t: Timestamps [s]
-        function [x, t] = getDamperPosAvgF(this, varargin)
-            x = [];
-            t = [];
-        end
-
-        % getDamperPosAvgR
-        %
-        % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
-        % OUTPUTS:
-        %   x: Average RL and RR damper position [mm]
-        %   t: Timestamps [s]
-        function [x, t] = getDamperPosAvgR(this, varargin)
-            x = [];
-            t = [];
-        end
-
         % getWheelSpeedXX
         %
         % INPUTS:
@@ -370,6 +383,31 @@ classdef MotecHandler
             t = [];
         end
         function [x, t] = getTirePressureRR(this, varargin)
+            x = [];
+            t = [];
+        end
+
+        % getTireTempXX
+        %
+        % INPUTS:
+        %   t_start: Beginning of time range to extract (optional) [s]
+        %   t_end: End of time range to extract (optional) [s]
+        % OUTPUTS:
+        %   x: Tire temperature [C]
+        %   t: Timestamps [s]
+        function [x, t] = getTireTempFL(this, varargin)
+            x = [];
+            t = [];
+        end
+        function [x, t] = getTireTempFR(this, varargin)
+            x = [];
+            t = [];
+        end
+        function [x, t] = getTireTempRL(this, varargin)
+            x = [];
+            t = [];
+        end
+        function [x, t] = getTireTempRR(this, varargin)
             x = [];
             t = [];
         end
