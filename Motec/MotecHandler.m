@@ -3,22 +3,101 @@
 % Utility class for extracting data from a MoTeC log which has been exported to
 % a Matlab format.
 %
-% This class defines the interface for querying common channels. Individual applications need to
-% extract the appropriate channels and perform all the data conversions.
+% This class provides:
+%   - A consistent interface for accessing a common set of channels
+%   - The ability to access any channel in the log
+%   - An optional pre-processing step to perform any unit conversions or other operations
+%
+% Users of this class must provide:
+%   - The mapping between channel names in the log data and pre defined list of internal
+%     channel names (e.g. THROTTLE --> throttle_pos, where THROTTLE is the inernal name
+%     used within this class, and throttle_pos is the name in the log data). Full list
+%     below. This can be done via defineChannelMap() in derived classes, or manually via
+%     addChannelMappingEntry().
+%   - Optional step to pre-process log data to do any necessary conversions, this can be
+%     done in preProcessLogData() in derived classes.
+%
+% The internal channel names are listed below:
+%   GROUND_SPEED
+%   AIR_SPEED
+%   AX
+%   AY
+%   AZ
+%   WX
+%   WY
+%   WZ
+%   ENGINE_RPM
+%   THROTTLE
+%   BRAKE
+%   CLUTCH
+%   STEERING_WHEEL
+%   DAMPER_FL
+%   DAMPER_FR
+%   DAMPER_RL
+%   DAMPER_RR
+%   WS_FL
+%   WS_FR
+%   WS_RL
+%   WS_RR
+%   WS_ROT_FL
+%   WS_ROT_FR
+%   WS_ROT_RL
+%   WS_ROT_RR
+%   TIRE_P_FL
+%   TIRE_P_FR
+%   TIRE_P_RL
+%   TIRE_P_RR
+%   TIRE_T_FL
+%   TIRE_T_FR
+%   TIRE_T_RL
+%   TIRE_T_RR
+%
+% All channel accessors (e.g. getThrottle()) can accept multiple optional input arguments
+% to further filter the data based on time. They operated in the same fashion as
+% getChannel(). The argument combinations are described here for conciseness so it
+% doesn't have to be repeated at each function.
+% INPUTS:
+%   (timestamps): timestamps is a logical array of time indices to retrieve data for
+%   (t_start, t_end): Data from channel will be retrieved between the timestamps t_start
+%       and t_end
 classdef MotecHandler
+    % properties (Access = private)
     properties
+        channel_map = containers.Map;
+        % Struct provided by MoTeC, each field name matches the channel name, and each
+        % entry has "Time", "Value", and "Units" fields.
         log;
     end
 
     methods
+        % MotecHandler
+        %
+        % INPUTS:
+        %   source: Optional - Either a filename to load, or a struct containing log
+        %           data (the type will be detected and parsed appropriately)
+        function this = MotecHandler(source)
+            this = this.initializeChannelMap();
+            this = this.defineChannelMap();
+
+            if nargin > 0
+                if isa(source, 'char') || isa(source, 'string')
+                    this = this.loadFromFile(source);
+                elseif isa(source, 'struct')
+                    this = this.loadFromMatlabData(source);
+                end
+            end
+        end
+
         % loadFromFile
         %
         % INPUTS:
         %   filename: Name of matlab file (exported from MoTeC) to load
         function this = loadFromFile(this, filename)
+            filename = string(filename);
+
             [~, ~, ext] = fileparts(filename);
-            if ~isequal(ext, '.mat')
-                filename = strcat(filename, '.mat');
+            if ~isequal(ext, ".mat")
+                filename = strcat(filename, ".mat");
             end
 
             this = this.loadFromMatlabData(load(filename));
@@ -30,6 +109,7 @@ classdef MotecHandler
         %   log: Matlab object to initialize from (exported from MoTeC)
         function this = loadFromMatlabData(this, log)
             this.log = log;
+            this = this.preProcessLogData();
         end
 
         % trimTimeRange
@@ -47,291 +127,428 @@ classdef MotecHandler
                 this.log.(fields{i}).Time = this.log.(fields{i}).Time(indices);
                 this.log.(fields{i}).Value = this.log.(fields{i}).Value(indices);
             end
-
         end
 
-        % getChannel
+        % trimTimeStamps
         %
-        % Access for any channel by name.
+        % Trims the log data to only include specified time stamps
         %
         % INPUTS:
-        %   channel: Name of channel to extract
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
-        % OUTPUTS:
-        %   x: Channel values
-        %   t: Timestamps
-        function [x, t] = getChannel(this, channel, varargin)
-            if ~isempty(varargin) > 0 && ~isempty(varargin{1})
-                t_start = varargin{1};
-            else
-                t_start = 0;
+        %   stamps: Time stamps to include
+        function this = trimTimeStamps(this, stamps)
+            fields = fieldnames(this.log);
+            for i=1:length(fields)
+                this.log.(fields{i}).Time = this.log.(fields{i}).Time(stamps);
+                this.log.(fields{i}).Value = this.log.(fields{i}).Value(stamps);
             end
-            if length(varargin) > 1 && ~isempty(varargin{2})
-                t_end = varargin{2};
-            else
-                t_end = inf;
-            end
+        end
 
-            indices = and(this.log.(channel).Time >= t_start, this.log.(channel).Time <= t_end);
-            t = this.log.(channel).Time(indices);
-            x = this.log.(channel).Value(indices);
+        % getTimestamps
+        %
+        % INPUTS:
+        %   See note at top
+        % OUTPUTS:
+        %   t: Timestamps [s]
+        function t = getTimestamps(this, varargin)
+            % All fields have the same timestamps in MoTeC logs, so we just grab the
+            % first one
+            fields = fieldnames(this.log);
+            if isempty(varargin)
+                % Grab the full set of data points
+                t = this.log.(fields{1}).Time;
+            else
+                if length(varargin) == 1 && isa(varargin{1}, 'logical')
+                    % Only grab specific time points
+                    t = this.log.(fields{1}).Time(varargin{1});
+                elseif length(varargin) == 2 && isa(varargin{1}, 'double') && isa(varargin{2}, 'double')
+                    % Grab within a time range
+                    t_start = varargin{1};
+                    t_end = varargin{2};
+
+                    indices = and(this.log.(fields{1}).Time >= t_start, this.log.(fields{1}).Time <= t_end);
+                    t = this.log.(fields{1}).Time(indices);
+                else
+                    error('Cannot parse inputs for getting channel');
+                end
+            end
         end
 
         % getGroundSpeed
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   v: Ground velocity [m/s]
-        %   t: Timestamps [s]
-        function [v, t] = getGroundSpeed(this, varargin)
-            v = [];
-            t = [];
+        function v = getGroundSpeed(this, varargin)
+            v = this.getChannel('GROUND_SPEED', varargin{:});
         end
 
         % getAirSpeed
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   v: Freestream velocity [m/s]
-        %   t: Timestamps [s]
-        function [v, t] = getAirSpeed(this, varargin)
-            v = [];
-            t = [];
+        function v = getAirSpeed(this, varargin)
+            v = this.getChannel('AIR_SPEED', varargin{:});
         end
 
         % getLongitudinalAccel
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   a: Longitudinal acceleration (+ve forward) [m/s^2]
-        %   t: Timestamps [s]
-        function [a, t] = getLongitudinalAccel(this, varargin)
-            a = [];
-            t = [];
+        function a = getLongitudinalAccel(this, varargin)
+            a = this.getChannel('AX', varargin{:});
         end
 
         % getLateralAccel
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   a: Lateral acceleration (+ve right) [m/s^2]
-        %   t: Timestamps [s]
-        function [a, t] = getLateralAccel(this, varargin)
-            a = [];
-            t = [];
+        function a = getLateralAccel(this, varargin)
+            a = this.getChannel('AY', varargin{:});
+        end
+
+        % getVerticalAccel
+        %
+        % INPUTS:
+        %   See note at top
+        % OUTPUTS:
+        %   a: Vertical acceleration (+ve down) [m/s^2]
+        function a = getVerticalAccel(this, varargin)
+            a = this.getChannel('AZ', varargin{:});
         end
 
         % getRollRate
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   w: Angular velocity about the X axis (+ve RH side downwards) [rad/s]
-        %   t: Timestamps [s]
-        function [w, t] = getRollRate(this, varargin)
-            w = [];
-            t = [];
+        function w = getRollRate(this, varargin)
+            w = this.getChannel('WX', varargin{:});
         end
 
         % getPitchRate
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   w: Angular velocity about the Y axis (+ve pitch upwards) [rad/s]
-        %   t: Timestamps [s]
-        function [w, t] = getPitchRate(this, varargin)
-            w = [];
-            t = [];
+        function w = getPitchRate(this, varargin)
+            w = this.getChannel('WY', varargin{:});
         end
 
         % getYawRate
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   w: Angular velocity about the Z axis (+ve turning right) [rad/s]
-        %   t: Timestamps [s]
-        function [w, t] = getYawRate(this, varargin)
-            w = [];
-            t = [];
+        function w = getYawRate(this, varargin)
+            w = this.getChannel('WZ', varargin{:});
         end
 
         % getRPM
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   rpm: Engine RPM [rev/minute]
-        %   t: Timestamps [s]
-        function [rpm, t] = getRPM(this, varargin)
-            rpm = [];
-            t = [];
+        function rpm = getRPM(this, varargin)
+            rpm = this.getChannel('ENGINE_RPM', varargin{:});
         end
 
         % getThrottle
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   throttle: Throttle position (0=unpressed, 1=pressed)
-        %   t: Timestamps [s]
-        function [throttle, t] = getThrottle(this, varargin)
-            throttle = [];
-            t = [];
+        function throttle = getThrottle(this, varargin)
+            throttle = this.getChannel('THROTTLE', varargin{:});
         end
 
         % getBrake
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   brake: Brake position (0=unpressed, 1=pressed)
-        %   t: Timestamps [s]
-        function [brake, t] = getBrake(this, varargin)
-            brake = [];
-            t = [];
+        function brake = getBrake(this, varargin)
+            brake = this.getChannel('BRAKE', varargin{:});
         end
 
         % getClutch
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   clutch: Clutch position (0=unpressed, 1=pressed)
-        %   t: Timestamps [s]
-        function [clutch, t] = getClutch(this, varargin)
-            clutch = [];
-            t = [];
+        function clutch = getClutch(this, varargin)
+            clutch = this.getChannel('CLUTCH', varargin{:});
         end
 
         % getSteeringWheelAngle
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   theta: Steering wheel angle (+ve turns right) [rad]
-        %   t: Timestamps [s]
-        function [theta, t] = getSteeringWheelAngle(this, varargin)
-            theta = [];
-            t = [];
+        function theta = getSteeringWheelAngle(this, varargin)
+            theta = this.getChannel('STEERING_WHEEL', varargin{:});
         end
 
         % getDamperPosXX
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   x: Damper position [mm]
-        %   t: Timestamps [s]
-        function [x, t] = getDamperPosFL(this, varargin)
-            x = [];
-            t = [];
+        function x = getDamperPosFL(this, varargin)
+            x = this.getChannel('DAMPER_FL', varargin{:});
         end
-        function [x, t] = getDamperPosFR(this, varargin)
-            x = [];
-            t = [];
+        function x = getDamperPosFR(this, varargin)
+            x = this.getChannel('DAMPER_FR', varargin{:});
         end
-        function [x, t] = getDamperPosRL(this, varargin)
-            x = [];
-            t = [];
+        function x = getDamperPosRL(this, varargin)
+            x = this.getChannel('DAMPER_RL', varargin{:});
         end
-        function [x, t] = getDamperPosRR(this, varargin)
-            x = [];
-            t = [];
+        function x = getDamperPosRR(this, varargin)
+            x = this.getChannel('DAMPER_RR', varargin{:});
         end
 
         % getWheelSpeedXX
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
-        %   x: Effective wheel speed [m/s]
-        %   t: Timestamps [s]
-        function [x, t] = getWheelSpeedFL(this, varargin)
-            x = [];
-            t = [];
+        %   v: Wheel speed [m/s]
+        function v = getWheelSpeedFL(this, varargin)
+            v = this.getChannel('WS_FL', varargin{:});
         end
-        function [x, t] = getWheelSpeedFR(this, varargin)
-            x = [];
-            t = [];
+        function v = getWheelSpeedFR(this, varargin)
+            v = this.getChannel('WS_FR', varargin{:});
         end
-        function [x, t] = getWheelSpeedRL(this, varargin)
-            x = [];
-            t = [];
+        function v = getWheelSpeedRL(this, varargin)
+            v = this.getChannel('WS_RL', varargin{:});
         end
-        function [x, t] = getWheelSpeedRR(this, varargin)
-            x = [];
-            t = [];
+        function v = getWheelSpeedRR(this, varargin)
+            v = this.getChannel('WS_RR', varargin{:});
+        end
+
+        % getWheelRotSpeedXX
+        %
+        % INPUTS:
+        %   See note at top
+        % OUTPUTS:
+        %   w: Wheel rotational rate [rad/s]
+        function w = getWheelRotSpeedFL(this, varargin)
+            w = this.getChannel('WS_ROT_FL', varargin{:});
+        end
+        function w = getWheelRotSpeedFR(this, varargin)
+            w = this.getChannel('WS_ROT_FR', varargin{:});
+        end
+        function w = getWheelRotSpeedRL(this, varargin)
+            w = this.getChannel('WS_ROT_RL', varargin{:});
+        end
+        function w = getWheelRotSpeedRR(this, varargin)
+            w = this.getChannel('WS_ROT_RR', varargin{:});
         end
 
         % getTirePressureXX
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   x: Tire pressure [psi]
-        %   t: Timestamps [s]
-        function [x, t] = getTirePressureFL(this, varargin)
-            x = [];
-            t = [];
+        function p = getTirePressureFL(this, varargin)
+            p = this.getChannel('TIRE_P_FL', varargin{:});
         end
-        function [x, t] = getTirePressureFR(this, varargin)
-            x = [];
-            t = [];
+        function p = getTirePressureFR(this, varargin)
+            p = this.getChannel('TIRE_P_FR', varargin{:});
         end
-        function [x, t] = getTirePressureRL(this, varargin)
-            x = [];
-            t = [];
+        function p = getTirePressureRL(this, varargin)
+            p = this.getChannel('TIRE_P_RL', varargin{:});
         end
-        function [x, t] = getTirePressureRR(this, varargin)
-            x = [];
-            t = [];
+        function p = getTirePressureRR(this, varargin)
+            p = this.getChannel('TIRE_P_RR', varargin{:});
         end
 
         % getTireTempXX
         %
         % INPUTS:
-        %   t_start: Beginning of time range to extract (optional) [s]
-        %   t_end: End of time range to extract (optional) [s]
+        %   See note at top
         % OUTPUTS:
         %   x: Tire temperature [C]
-        %   t: Timestamps [s]
-        function [x, t] = getTireTempFL(this, varargin)
-            x = [];
-            t = [];
+        function t = getTireTempFL(this, varargin)
+            t = this.getChannel('TIRE_T_FL', varargin{:});
         end
-        function [x, t] = getTireTempFR(this, varargin)
-            x = [];
-            t = [];
+        function t = getTireTempFR(this, varargin)
+            t = this.getChannel('TIRE_T_FR', varargin{:});
         end
-        function [x, t] = getTireTempRL(this, varargin)
-            x = [];
-            t = [];
+        function t = getTireTempRL(this, varargin)
+            t = this.getChannel('TIRE_T_RL', varargin{:});
         end
-        function [x, t] = getTireTempRR(this, varargin)
-            x = [];
-            t = [];
+        function t = getTireTempRR(this, varargin)
+            t = this.getChannel('TIRE_T_RR', varargin{:});
+        end
+
+        % getChannel
+        %
+        % Access for any channel by name. Can optionally only retrieve for specific
+        % timestamps or time ranges.
+        %
+        % This uses the internal channel names stored in the channel name mapping, not
+        % the channel names originally present in the log data.
+        %
+        % INPUTS:
+        %   (channel): Channel is the internal name of channel to retrieve
+        %   (channel, timestamps): timestamps is a logical array of time indices to
+        %       retrieve data for
+        %   (channel, t_start, t_end): Data from channel will be retrieved between the
+        %       timestamps t_start and t_end
+        % OUTPUTS:
+        %   x: Channel values, empty when channel not present
+        function x = getChannel(this, channel, varargin)
+            if isKey(this.channel_map, channel)
+                source_channel_name = this.channel_map(channel);
+                x = this.getChannelNoRemap(source_channel_name, varargin{:});
+            else
+                x = [];
+            end
+        end
+
+        % getChannelNoRemap
+        %
+        % Version of getChannel() that does not remap channel names, this directly
+        % accesses the log for the channel name provided.
+        function x = getChannelNoRemap(this, channel, varargin)
+            if ~isfield(this.log, channel)
+                x = [];
+                return;
+            end
+
+            if isempty(varargin)
+                % Grab the full set of data points
+                x = this.log.(channel).Value;
+            else
+                if length(varargin) == 1 && isa(varargin{1}, 'logical')
+                    % Only grab specific time points
+                    x = this.log.(channel).Value(varargin{1});
+                elseif length(varargin) == 2 && isa(varargin{1}, 'double') && isa(varargin{2}, 'double')
+                    % Grab within a time range
+                    t_start = varargin{1};
+                    t_end = varargin{2};
+
+                    indices = and(this.log.(channel).Time >= t_start, this.log.(channel).Time <= t_end);
+                    x = this.log.(channel).Value(indices);
+                else
+                    error('Cannot parse inputs for getting channel');
+                end
+            end
+        end
+
+        % addChannelMappingEntry
+        %
+        % Adds an entry to the map for channel names so that this class can access
+        % common data channels in the log.
+        %
+        % INPUTS:
+        %   internal_name: Channel name used internally (see initializeChannelMap() for
+        %       complete list)
+        %   source_name: Name of the channel in the log data
+        function this = addChannelMappingEntry(this, internal_name, source_name)
+            this.channel_map(internal_name) = source_name;
+        end
+
+        % listInternalChannels
+        %
+        % Provides a list of all channels present in the mapping
+        %
+        % OUTPUTS:
+        %   channels: Cell array of all channel names
+        function channels = listInternalChannels(this)
+            channels = keys(this.channel_map);
+        end
+
+        % listLogChannels
+        %
+        % Provides a list of all channels present in the log data
+        %
+        % OUTPUTS:
+        %   channels: Cell array of all channel names
+        function channels = listLogChannels(this)
+            channels = fieldnames(this.log);
+        end
+
+        % defineChannelMap
+        %
+        % Method to be implemented by derived classes to set all channel name mappings.
+        %
+        % Will be called when instantiated or a new log is loaded.
+        function this = defineChannelMap(this)
+        end
+
+        % preProcessLogData
+        %
+        % Method to be implemented by derived classes to pre-process log data to apply any
+        % necessary data conversions.
+        %
+        % Will be called when instantiated or a new log is loaded.
+        function this = preProcessLogData(this)
+        end
+    end
+
+    methods (Access = protected)
+        % initializeChannelMap
+        %
+        % Populates an empty mapping of all common channels used:
+        %   INTERNAL_NAME --> SOURCE_NAME
+        % Where SOURCE_NAME is the name of channels in the log data.
+        %
+        % Map entries will be created for all channels listed in the description at the
+        % top.
+        function this = initializeChannelMap(this)
+            this.channel_map = containers.Map('KeyType', 'char', 'ValueType', 'char');
+
+            this = this.addChannelMappingEntry('GROUND_SPEED', '');
+            this = this.addChannelMappingEntry('AIR_SPEED', '');
+            this = this.addChannelMappingEntry('AX', '');
+            this = this.addChannelMappingEntry('AY', '');
+            this = this.addChannelMappingEntry('AZ', '');
+            this = this.addChannelMappingEntry('WX', '');
+            this = this.addChannelMappingEntry('WY', '');
+            this = this.addChannelMappingEntry('WZ', '');
+            this = this.addChannelMappingEntry('ENGINE_RPM', '');
+            this = this.addChannelMappingEntry('THROTTLE', '');
+            this = this.addChannelMappingEntry('BRAKE', '');
+            this = this.addChannelMappingEntry('CLUTCH', '');
+            this = this.addChannelMappingEntry('STEERING_WHEEL', '');
+            this = this.addChannelMappingEntry('DAMPER_FL', '');
+            this = this.addChannelMappingEntry('DAMPER_FR', '');
+            this = this.addChannelMappingEntry('DAMPER_RL', '');
+            this = this.addChannelMappingEntry('DAMPER_RR', '');
+            this = this.addChannelMappingEntry('WS_FL', '');
+            this = this.addChannelMappingEntry('WS_FR', '');
+            this = this.addChannelMappingEntry('WS_RL', '');
+            this = this.addChannelMappingEntry('WS_RR', '');
+            this = this.addChannelMappingEntry('WS_ROT_FL', '');
+            this = this.addChannelMappingEntry('WS_ROT_FR', '');
+            this = this.addChannelMappingEntry('WS_ROT_RL', '');
+            this = this.addChannelMappingEntry('WS_ROT_RR', '');
+            this = this.addChannelMappingEntry('TIRE_P_FL', '');
+            this = this.addChannelMappingEntry('TIRE_P_FR', '');
+            this = this.addChannelMappingEntry('TIRE_P_RL', '');
+            this = this.addChannelMappingEntry('TIRE_P_RR', '');
+            this = this.addChannelMappingEntry('TIRE_T_FL', '');
+            this = this.addChannelMappingEntry('TIRE_T_FR', '');
+            this = this.addChannelMappingEntry('TIRE_T_RL', '');
+            this = this.addChannelMappingEntry('TIRE_T_RR', '');
         end
     end
 end

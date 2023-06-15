@@ -115,15 +115,17 @@ classdef TireAnalysis < handle
         %   handler: Motec handler to get data  from
         %   setup: Car setup object to query for vehicle info
         function this = addLogData(this, handler, setup)
+            t_in = handler.getTimestamps();
+
             % Vehicle reference velocity
-            [v_in, t_in] = handler.getSpeed();
+            v_in = handler.getGroundSpeed();
             n_in = length(t_in);
             this.n = this.n + length(t_in);
             this.t = [this.t, t_in];
             this.v = [this.v, v_in];
 
             % Angular rate
-            [w_in, ~] = handler.getYawRate();
+            w_in = handler.getYawRate();
             this.w = [this.w, w_in];
 
             % Tire pressures
@@ -133,10 +135,10 @@ classdef TireAnalysis < handle
             this.RR.P = [this.RR.P, handler.getTirePressureRR()];
 
             % Damper positions for loads and rake and roll angles
-            [x_FL, ~] = handler.getDamperPosFL();
-            [x_FR, ~] = handler.getDamperPosFR();
-            [x_RL, ~] = handler.getDamperPosRL();
-            [x_RR, ~] = handler.getDamperPosRR();
+            x_FL = handler.getDamperPosFL();
+            x_FR = handler.getDamperPosFR();
+            x_RL = handler.getDamperPosRL();
+            x_RR = handler.getDamperPosRR();
 
             % Wheel normal loads
             Fz_FL = setup.FL_corner.springToWheelForce(setup.FL_corner.damperPosToSpringForce(x_FL));
@@ -179,7 +181,7 @@ classdef TireAnalysis < handle
             this.Fy_body = [this.Fy_body, setup.totalMass() * ay_in];
 
             % Wheel angles with respect to vehicle body
-            [delta_steer_in, ~] = handler.getSteeringWheelAngle();
+            delta_steer_in = handler.getSteeringWheelAngle();
             [delta_wheel_FL, delta_wheel_FR] = setup.steerToWheelAngles(delta_steer_in);
             delta_wheel_RL = -setup.RL_corner.toe * ones(size(delta_steer_in));
             delta_wheel_RR = setup.RR_corner.toe * ones(size(delta_steer_in));
@@ -201,10 +203,10 @@ classdef TireAnalysis < handle
             this.RR.V_est = [this.RR.V_est, V_RR_est_in];
 
             % Measured wheel speeds
-            [V_FL_meas_in, ~] = handler.getWheelSpeedFL();
-            [V_FR_meas_in, ~] = handler.getWheelSpeedFR();
-            [V_RL_meas_in, ~] = handler.getWheelSpeedRL();
-            [V_RR_meas_in, ~] = handler.getWheelSpeedRR();
+            V_FL_meas_in = handler.getWheelSpeedFL();
+            V_FR_meas_in = handler.getWheelSpeedFR();
+            V_RL_meas_in = handler.getWheelSpeedRL();
+            V_RR_meas_in = handler.getWheelSpeedRR();
 
             this.FL.V_meas = [this.FL.V_meas, V_FL_meas_in];
             this.FR.V_meas = [this.FR.V_meas, V_FR_meas_in];
