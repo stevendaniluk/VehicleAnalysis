@@ -19,7 +19,7 @@
 %
 % The internal channel names are listed below:
 %   GROUND_SPEED
-%   AIR_SPEED
+%   AIR_DYN_PRESSURE
 %   AX
 %   AY
 %   AZ
@@ -52,17 +52,8 @@
 %   TIRE_T_RL
 %   TIRE_T_RR
 %
-% All channel accessors (e.g. getThrottle()) can accept multiple optional input arguments
-% to further filter the data based on time. They operated in the same fashion as
-% getChannel(). The argument combinations are described here for conciseness so it
-% doesn't have to be repeated at each function.
-% INPUTS:
-%   (timestamps): timestamps is a logical array of time indices to retrieve data for
-%   (t_start, t_end): Data from channel will be retrieved between the timestamps t_start
-%       and t_end
 classdef MotecHandler
-    % properties (Access = private)
-    properties
+    properties (Access = protected)
         channel_map = containers.Map;
         % Struct provided by MoTeC, each field name matches the channel name, and each
         % entry has "Time", "Value", and "Units" fields.
@@ -173,231 +164,6 @@ classdef MotecHandler
             end
         end
 
-        % getGroundSpeed
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   v: Ground velocity [m/s]
-        function v = getGroundSpeed(this, varargin)
-            v = this.getChannel('GROUND_SPEED', varargin{:});
-        end
-
-        % getAirSpeed
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   v: Freestream velocity [m/s]
-        function v = getAirSpeed(this, varargin)
-            v = this.getChannel('AIR_SPEED', varargin{:});
-        end
-
-        % getLongitudinalAccel
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   a: Longitudinal acceleration (+ve forward) [m/s^2]
-        function a = getLongitudinalAccel(this, varargin)
-            a = this.getChannel('AX', varargin{:});
-        end
-
-        % getLateralAccel
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   a: Lateral acceleration (+ve right) [m/s^2]
-        function a = getLateralAccel(this, varargin)
-            a = this.getChannel('AY', varargin{:});
-        end
-
-        % getVerticalAccel
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   a: Vertical acceleration (+ve down) [m/s^2]
-        function a = getVerticalAccel(this, varargin)
-            a = this.getChannel('AZ', varargin{:});
-        end
-
-        % getRollRate
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   w: Angular velocity about the X axis (+ve RH side downwards) [rad/s]
-        function w = getRollRate(this, varargin)
-            w = this.getChannel('WX', varargin{:});
-        end
-
-        % getPitchRate
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   w: Angular velocity about the Y axis (+ve pitch upwards) [rad/s]
-        function w = getPitchRate(this, varargin)
-            w = this.getChannel('WY', varargin{:});
-        end
-
-        % getYawRate
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   w: Angular velocity about the Z axis (+ve turning right) [rad/s]
-        function w = getYawRate(this, varargin)
-            w = this.getChannel('WZ', varargin{:});
-        end
-
-        % getRPM
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   rpm: Engine RPM [rev/minute]
-        function rpm = getRPM(this, varargin)
-            rpm = this.getChannel('ENGINE_RPM', varargin{:});
-        end
-
-        % getThrottle
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   throttle: Throttle position (0=unpressed, 1=pressed)
-        function throttle = getThrottle(this, varargin)
-            throttle = this.getChannel('THROTTLE', varargin{:});
-        end
-
-        % getBrake
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   brake: Brake position (0=unpressed, 1=pressed)
-        function brake = getBrake(this, varargin)
-            brake = this.getChannel('BRAKE', varargin{:});
-        end
-
-        % getClutch
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   clutch: Clutch position (0=unpressed, 1=pressed)
-        function clutch = getClutch(this, varargin)
-            clutch = this.getChannel('CLUTCH', varargin{:});
-        end
-
-        % getSteeringWheelAngle
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   theta: Steering wheel angle (+ve turns right) [rad]
-        function theta = getSteeringWheelAngle(this, varargin)
-            theta = this.getChannel('STEERING_WHEEL', varargin{:});
-        end
-
-        % getDamperPosXX
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   x: Damper position [mm]
-        function x = getDamperPosFL(this, varargin)
-            x = this.getChannel('DAMPER_FL', varargin{:});
-        end
-        function x = getDamperPosFR(this, varargin)
-            x = this.getChannel('DAMPER_FR', varargin{:});
-        end
-        function x = getDamperPosRL(this, varargin)
-            x = this.getChannel('DAMPER_RL', varargin{:});
-        end
-        function x = getDamperPosRR(this, varargin)
-            x = this.getChannel('DAMPER_RR', varargin{:});
-        end
-
-        % getWheelSpeedXX
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   v: Wheel speed [m/s]
-        function v = getWheelSpeedFL(this, varargin)
-            v = this.getChannel('WS_FL', varargin{:});
-        end
-        function v = getWheelSpeedFR(this, varargin)
-            v = this.getChannel('WS_FR', varargin{:});
-        end
-        function v = getWheelSpeedRL(this, varargin)
-            v = this.getChannel('WS_RL', varargin{:});
-        end
-        function v = getWheelSpeedRR(this, varargin)
-            v = this.getChannel('WS_RR', varargin{:});
-        end
-
-        % getWheelRotSpeedXX
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   w: Wheel rotational rate [rad/s]
-        function w = getWheelRotSpeedFL(this, varargin)
-            w = this.getChannel('WS_ROT_FL', varargin{:});
-        end
-        function w = getWheelRotSpeedFR(this, varargin)
-            w = this.getChannel('WS_ROT_FR', varargin{:});
-        end
-        function w = getWheelRotSpeedRL(this, varargin)
-            w = this.getChannel('WS_ROT_RL', varargin{:});
-        end
-        function w = getWheelRotSpeedRR(this, varargin)
-            w = this.getChannel('WS_ROT_RR', varargin{:});
-        end
-
-        % getTirePressureXX
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   x: Tire pressure [psi]
-        function p = getTirePressureFL(this, varargin)
-            p = this.getChannel('TIRE_P_FL', varargin{:});
-        end
-        function p = getTirePressureFR(this, varargin)
-            p = this.getChannel('TIRE_P_FR', varargin{:});
-        end
-        function p = getTirePressureRL(this, varargin)
-            p = this.getChannel('TIRE_P_RL', varargin{:});
-        end
-        function p = getTirePressureRR(this, varargin)
-            p = this.getChannel('TIRE_P_RR', varargin{:});
-        end
-
-        % getTireTempXX
-        %
-        % INPUTS:
-        %   See note at top
-        % OUTPUTS:
-        %   x: Tire temperature [C]
-        function t = getTireTempFL(this, varargin)
-            t = this.getChannel('TIRE_T_FL', varargin{:});
-        end
-        function t = getTireTempFR(this, varargin)
-            t = this.getChannel('TIRE_T_FR', varargin{:});
-        end
-        function t = getTireTempRL(this, varargin)
-            t = this.getChannel('TIRE_T_RL', varargin{:});
-        end
-        function t = getTireTempRR(this, varargin)
-            t = this.getChannel('TIRE_T_RR', varargin{:});
-        end
-
         % getChannel
         %
         % Access for any channel by name. Can optionally only retrieve for specific
@@ -450,6 +216,39 @@ classdef MotecHandler
                 else
                     error('Cannot parse inputs for getting channel');
                 end
+            end
+        end
+
+        % getChannelUnits
+        %
+        % Access for any channel untis by name.
+        %
+        % This uses the internal channel names stored in the channel name mapping, not
+        % the channel names originally present in the log data.
+        %
+        % INPUTS:
+        %   channel: Internal name of channel units to retrieve
+        % OUTPUTS:
+        %   units: Channel units
+        function units = getChannelUnits(this, channel)
+            if isKey(this.channel_map, channel)
+                source_channel_name = this.channel_map(channel);
+                units = this.getChannelUnitsNoRemap(source_channel_name);
+            else
+                units = '';
+            end
+        end
+
+        % getChannelUnitsNoRemap
+        %
+        % Version of getChannelUnits() that does not remap channel names, this directly
+        % accesses the log for the channel name provided.
+        function units = getChannelUnitsNoRemap(this, channel)
+            if isfield(this.log, channel)
+                units = this.log.(channel).Units;
+            else
+                units = '';
+                return;
             end
         end
 
@@ -517,7 +316,7 @@ classdef MotecHandler
             this.channel_map = containers.Map('KeyType', 'char', 'ValueType', 'char');
 
             this = this.addChannelMappingEntry('GROUND_SPEED', '');
-            this = this.addChannelMappingEntry('AIR_SPEED', '');
+            this = this.addChannelMappingEntry('AIR_DYN_PRESSURE', '');
             this = this.addChannelMappingEntry('AX', '');
             this = this.addChannelMappingEntry('AY', '');
             this = this.addChannelMappingEntry('AZ', '');
