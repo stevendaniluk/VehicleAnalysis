@@ -18,6 +18,7 @@
 %     done in preProcessLogData() in derived classes.
 %
 % The internal channel names are listed below:
+%   LAP_DISTANCE
 %   GROUND_SPEED
 %   AIR_DYN_PRESSURE
 %   AX
@@ -26,7 +27,9 @@
 %   WX
 %   WY
 %   WZ
+%   ELEVATION
 %   ENGINE_RPM
+%   FUEL_LEVEL
 %   THROTTLE
 %   BRAKE
 %   CLUTCH
@@ -53,7 +56,7 @@
 %   TIRE_T_RR
 %
 classdef MotecHandler
-    properties (Access = protected)
+    properties (Access = public)
         channel_map = containers.Map;
         % Struct provided by MoTeC, each field name matches the channel name, and each
         % entry has "Time", "Value", and "Units" fields.
@@ -252,6 +255,47 @@ classdef MotecHandler
             end
         end
 
+        % addChannelData
+        %
+        % Adds/updates data for a channel
+        %
+        % INPUTS:
+        %   name: Internal name of the channel
+        %   x: Data points
+        %   units: Units for x
+        function this = addChannelData(this, name, x, units)
+            if isKey(this.channel_map, name)
+                this.log.(name).Time = this.getTimestamps();
+                this.log.(name).Value = x;
+                this.log.(name).Units = units;
+            end
+        end
+
+        % smoothChannel
+        %
+        % Applies a smoothing operation to the data on a channel.
+        %
+        % INPUTS:
+        %   channel: Internal name of channel to smooth
+        %   window: Size of window (number of points) to apply smoothing over
+        %   method: Name of the smoothing method ('movmean', 'movmedian', etc)
+        function this = smoothChannel(this, channel, window, method)
+            if isKey(this.channel_map, channel)
+                channel = this.channel_map(channel);
+                this = this.smoothChannelNoRemap(channel, window, method);
+            end
+        end
+
+        % smoothChannelNoRemap
+        %
+        % Version of smoothChannel() that does not remap channel names, this directly
+        % accesses the log for the channel name provided.
+        function this = smoothChannelNoRemap(this, channel, window, method)
+            if isfield(this.log, channel)
+                this.log.(channel).Value = smoothdata(this.log.(channel).Value, method, window);
+            end
+        end
+
         % addChannelMappingEntry
         %
         % Adds an entry to the map for channel names so that this class can access
@@ -303,6 +347,165 @@ classdef MotecHandler
         end
     end
 
+    methods (Static)
+        % thresholdIndices
+        %
+        % Extracts all indices from a vector that abides by some range and rate limits.
+        %
+        % INPUTS:
+        %   x: Data to evaluate
+        %   dt: Sample rate [s]
+        %   min: Minimum allowed value (inclusive)
+        %   max: Maximum allowed value (inclusive)
+        %   x_dot_min: Minimum allowed value of the derivative of x
+        %   x_dot_max: Maximum allowed value of the derivative of x
+        % OUTPUTS:
+        %   indices: Indices of the x vector that abides by all limits
+        function indices = thresholdIndices(x, dt, x_min, x_max, x_dot_min, x_dot_max)
+            min_inds = x >= x_min;
+            max_inds = x <= x_max;
+
+            x_dot = [diff(x), 0] / dt;
+            x_dot_min_inds = x_dot >= x_dot_min;
+            x_dot_max_inds = x_dot <= x_dot_max;
+
+            indices = and(min_inds, and(max_inds, and(x_dot_min_inds, x_dot_max_inds)));
+        end
+
+        % trimLogicalEdges
+        %
+        % Performs an erosion operation on a logical data vector.
+        %
+        % INPUTS:
+        %   x, n: x is the logical data vector to trim (true values are trimmed), n is
+        %     the number of steps to trim on each side
+        %   x, dt, dt_trim: x is the logical data vector, dt is the time step size of the
+        %     data, and dt_trim is how much to trim on each side of the data
+        % OUTPUTS:
+        %   x: Trimmed version of x
+        function x = trimLogicalEdges(varargin)
+            x = varargin{1};
+
+            n = 0;
+            if length(varargin) == 2
+                n = varargin{2};
+            elseif length(varargin) == 3
+                n = ceil(varargin{3} / varargin{2});
+            end
+
+            if n > 0
+                % Apply a convolution to the indices to identify which ones are neighboured
+                % by false values
+
+                % Unity  kernel extending on each side the size of the buffer
+                kernel = ones(1, 2 * n + 1);
+
+                % Apply the convolution, then look for entries that were true for every element of
+                % the kernel
+                x = conv(x, kernel, 'same');
+                x = x == length(kernel);
+            end
+        end
+
+        % detectConditionPeriod
+        %
+        % Detects the periods in a data vector when some condition is true for at least
+        % some period of time
+        %
+        % Example:
+        %   x = [1, 1, 1, 0, 0, 1, 0, 1, 1, 1, 0];
+        %   dt = 1.0
+        %   dt_min = 3.0
+        %
+        %   The elements of x where it is true for at least 3 seconds are:
+        %     [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]
+        %
+        % INPUTS:
+        %   x: Logical data vector to evaluate
+        %   dt: Time step of data in x
+        %   dt_min: Minimum amount of time for points in x to be true
+        % OUTPUTS:
+        %   x: Version of x where only elements that remain true for some period of time
+        %     are left as true
+        function x = detectConditionPeriod(x, dt, dt_min)
+            % Detect periods where the condition is true by performing an erosion/closing
+            % operation followed by a dilation/opening operation. The erosion will leave
+            % only the points where the condition was true for the required period of
+            % time, then the dilation operation will expand those periods back to their
+            % original size.
+
+            % Need a kernel that covers the required time window
+            kernel_size = ceil(dt_min / dt);
+            kernel_size = 2 * floor(kernel_size / 2) + 1;
+            kernel = ones(1, kernel_size);
+
+            % Erode, look for elements where the full kernel was touching true values
+            x = conv(x, kernel, 'same');
+            x = x == kernel_size;
+
+            % Dilate, look for any points where the kernel touched a true value
+            x = conv(x, kernel, 'same');
+            x = x > 0;
+        end
+
+        % smoothData
+        %
+        % Performs a smoothing operation on a data vector.
+        %
+        % INPUTS:
+        %   x, n: x is the data vector to smooth, n is window size to smooth over
+        %   x, dt, dt_smooth: x is the data vector to smooth, dt is the time step size,
+        %     dt_smooth is the time window to smooth over
+        % OUTPUTS:
+        %   x: Smoothed data
+        function x = smoothData(varargin)
+            x = varargin{1};
+
+            n = 0;
+            if length(varargin) == 2
+                n = varargin{2};
+            elseif length(varargin) == 3
+                dt = varargin{2};
+                dt_smooth = varargin{3};
+                n = ceil(dt_smooth / dt);
+            end
+
+            if n > 0
+                x = smoothdata(x, 'movmean', n);
+            end
+        end
+
+        % shiftData
+        %
+        % Performs an erosion operation on a logical data vector.
+        %
+        % INPUTS:
+        %   x, n: x is the logical data vector to trim (true values are trimmed), n is
+        %     the number of steps to shift the data by (+ve pads beginning of vector)
+        %   x, dt, dt_shift: x is the logical data vector, dt is the time step size of the
+        %     data, and dt_shift is how much to time to shift the data by (+ve pads the
+        %     beginning of the vector)
+        % OUTPUTS:
+        %   x: Time shifted data
+        function x = shiftData(varargin)
+            x = varargin{1};
+
+            n = 0;
+            if length(varargin) == 2
+                n = varargin{2};
+            elseif length(varargin) == 3
+                n = ceil(varargin{3} / varargin{2});
+            end
+
+            if n > 0
+                x = [x(1) * ones(1, n), x(1:end - n)];
+            elseif n < 0
+                n = -n;
+                x = [x(1 + n:end), x(end) * ones(1, n)];
+            end
+        end
+    end
+
     methods (Access = protected)
         % initializeChannelMap
         %
@@ -315,6 +518,7 @@ classdef MotecHandler
         function this = initializeChannelMap(this)
             this.channel_map = containers.Map('KeyType', 'char', 'ValueType', 'char');
 
+            this = this.addChannelMappingEntry('LAP_DISTANCE', '');
             this = this.addChannelMappingEntry('GROUND_SPEED', '');
             this = this.addChannelMappingEntry('AIR_DYN_PRESSURE', '');
             this = this.addChannelMappingEntry('AX', '');
@@ -323,7 +527,9 @@ classdef MotecHandler
             this = this.addChannelMappingEntry('WX', '');
             this = this.addChannelMappingEntry('WY', '');
             this = this.addChannelMappingEntry('WZ', '');
+            this = this.addChannelMappingEntry('ELEVATION', '');
             this = this.addChannelMappingEntry('ENGINE_RPM', '');
+            this = this.addChannelMappingEntry('FUEL_LEVEL', '');
             this = this.addChannelMappingEntry('THROTTLE', '');
             this = this.addChannelMappingEntry('BRAKE', '');
             this = this.addChannelMappingEntry('CLUTCH', '');
