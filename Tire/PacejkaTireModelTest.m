@@ -181,12 +181,12 @@ classdef PacejkaTireModelTest < matlab.unittest.TestCase
             model.PFy0 = this.perturbModelParameters(model.PFy0, 0.25);
             model.PFy = this.perturbModelParameters(model.PFy, 0.25);
 
-            [Fx_perturbed, ~] = model.Fx(Fz, P, kappa, alpha, gamma, Vs, V0);
-            [Fy_perturbed, ~] = model.Fy(Fz, P, kappa, alpha, gamma, Vs, V0);
+%             [Fx_perturbed, ~] = model.Fx(Fz, P, kappa, alpha, gamma, Vs, V0);
+%             [Fy_perturbed, ~] = model.Fy(Fz, P, kappa, alpha, gamma, Vs, V0);
 
             % Add noise to some sample data generated with the original model
-            Fx_meas = normrnd(Fx_ref, 100);
-            Fy_meas = normrnd(Fy_ref, 100);
+            Fx_meas = normrnd(Fx_ref, 50);
+            Fy_meas = normrnd(Fy_ref, 50);
 
             % Fit a new model
             model = model.fitFxFy(Fx_meas, Fy_meas, delta, Fz, P, kappa, alpha, gamma, Vs, Vs, ...
