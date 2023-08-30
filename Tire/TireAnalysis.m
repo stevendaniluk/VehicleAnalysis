@@ -112,79 +112,79 @@ classdef TireAnalysis < handle
         % Adds more log data to the analysis, appending it to the current set.
         %
         % INPUTS:
-        %   handler: Motec handler to get data  from
-        %   setup: Car setup object to query for vehicle info
-        function this = addLogData(this, handler, setup)
+        %   handler: Motec handler to get data from
+        %   vehicle: Vehicle object to query for vehicle info and calculations
+        function this = addLogData(this, handler, vehicle)
             t_in = handler.getTimestamps();
 
             % Vehicle reference velocity
-            v_in = handler.getGroundSpeed();
+            v_in = handler.getChannel('GROUND_SPEED');
             n_in = length(t_in);
             this.n = this.n + length(t_in);
             this.t = [this.t, t_in];
             this.v = [this.v, v_in];
 
             % Angular rate
-            w_in = handler.getYawRate();
+            w_in = handler.getChannel('WZ');
             this.w = [this.w, w_in];
 
             % Tire pressures
-            this.FL.P = [this.FL.P, handler.getTirePressureFL()];
-            this.FR.P = [this.FR.P, handler.getTirePressureFR()];
-            this.RL.P = [this.RL.P, handler.getTirePressureRL()];
-            this.RR.P = [this.RR.P, handler.getTirePressureRR()];
+            this.FL.P = [this.FL.P, handler.getChannel('TIRE_P_FL')];
+            this.FR.P = [this.FR.P, handler.getChannel('TIRE_P_FR')];
+            this.RL.P = [this.RL.P, handler.getChannel('TIRE_P_RL')];
+            this.RR.P = [this.RR.P, handler.getChannel('TIRE_P_RR')];
 
             % Damper positions for loads and rake and roll angles
-            x_FL = handler.getDamperPosFL();
-            x_FR = handler.getDamperPosFR();
-            x_RL = handler.getDamperPosRL();
-            x_RR = handler.getDamperPosRR();
+            x_FL = handler.getChannel('DAMPER_FL');
+            x_FR = handler.getChannel('DAMPER_FR');
+            x_RL = handler.getChannel('DAMPER_RL');
+            x_RR = handler.getChannel('DAMPER_RR');
 
             % Wheel normal loads
-            Fz_FL = setup.FL_corner.springToWheelForce(setup.FL_corner.damperPosToSpringForce(x_FL));
+            Fz_FL = vehicle.FL_corner.totalWheelForce(x_FL, 0);
             this.FL.Fz = [this.FL.Fz, Fz_FL];
 
-            Fz_FR = setup.FR_corner.springToWheelForce(setup.FR_corner.damperPosToSpringForce(x_FR));
+            Fz_FR = vehicle.FR_corner.totalWheelForce(x_FR, 0);
             this.FR.Fz = [this.FR.Fz, Fz_FR];
 
-            Fz_RL = setup.RL_corner.springToWheelForce(setup.RL_corner.damperPosToSpringForce(x_RL));
+            Fz_RL = vehicle.RL_corner.totalWheelForce(x_RL, 0);
             this.RL.Fz = [this.RL.Fz, Fz_RL];
 
-            Fz_RR = setup.RR_corner.springToWheelForce(setup.RR_corner.damperPosToSpringForce(x_RR));
+            Fz_RR = vehicle.RR_corner.totalWheelForce(x_RR, 0);
             this.RR.Fz = [this.RR.Fz, Fz_RR];
 
             % Rake angle
-            [RH_f, RH_r] = setup.avgRideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
-            rake = setup.rakeFromRideHeights(RH_f, RH_r);
+            [RH_f, RH_r] = vehicle.avgRideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
+            pitch = vehicle.pitchFromAvgRideHeights(RH_f, RH_r);
 
             % Roll angle
-            [RH_FL, RH_FR, RH_RL, RH_RR] = setup.rideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
-            this.roll_f = deg2rad(setup.rollFromFrontRideHeights(RH_FL, RH_FR));
-            this.roll_r = deg2rad(setup.rollFromRearRideHeights(RH_RL, RH_RR));
+            [RH_FL, RH_FR, RH_RL, RH_RR] = vehicle.rideHeightFromDamperPos(x_FL, x_FR, x_RL, x_RR);
+            this.roll_f = deg2rad(vehicle.rollFromFrontRideHeights(RH_FL, RH_FR));
+            this.roll_r = deg2rad(vehicle.rollFromRearRideHeights(RH_RL, RH_RR));
 
             % Camber
-            this.FL.gamma = [this.FL.gamma, -setup.FL_corner.camber * ones(1, n_in) + this.roll_f];
-            this.FR.gamma = [this.FR.gamma, setup.FR_corner.camber * ones(1, n_in) + this.roll_f];
-            this.RL.gamma = [this.RL.gamma, -setup.RL_corner.camber * ones(1, n_in) + this.roll_r];
-            this.RR.gamma = [this.RR.gamma, setup.RR_corner.camber * ones(1, n_in) + this.roll_r];
+            this.FL.gamma = [this.FL.gamma, -vehicle.FL_corner.camber * ones(1, n_in) + this.roll_f];
+            this.FR.gamma = [this.FR.gamma, vehicle.FR_corner.camber * ones(1, n_in) + this.roll_f];
+            this.RL.gamma = [this.RL.gamma, -vehicle.RL_corner.camber * ones(1, n_in) + this.roll_r];
+            this.RR.gamma = [this.RR.gamma, vehicle.RR_corner.camber * ones(1, n_in) + this.roll_r];
 
             % Body longitudinal and lateral forces, need to correct longitudinal force for
             % aerodynamic drag force drag
-            ax_in = handler.getLongitudinalAccel();
+            ax_in = handler.getChannel('AX');
             this.ax = [this.ax, ax_in];
 
-            Fx_body_in = setup.totalMass() * ax_in + setup.drag(v_in, RH_f, rake);
+            Fx_body_in = vehicle.totalMass() * ax_in + vehicle.drag(v_in, RH_f, pitch);
             this.Fx_body = [this.Fx_body, Fx_body_in];
 
-            ay_in = handler.getLateralAccel();
+            ay_in = handler.getChannel('AY');
             this.ay = [this.ay, ay_in];
-            this.Fy_body = [this.Fy_body, setup.totalMass() * ay_in];
+            this.Fy_body = [this.Fy_body, vehicle.totalMass() * ay_in];
 
             % Wheel angles with respect to vehicle body
-            delta_steer_in = handler.getSteeringWheelAngle();
-            [delta_wheel_FL, delta_wheel_FR] = setup.steerToWheelAngles(delta_steer_in);
-            delta_wheel_RL = -setup.RL_corner.toe * ones(size(delta_steer_in));
-            delta_wheel_RR = setup.RR_corner.toe * ones(size(delta_steer_in));
+            delta_steer_in = handler.getChannel('STEERING_WHEEL');
+            [delta_wheel_FL, delta_wheel_FR] = vehicle.steerToWheelAngles(delta_steer_in);
+            delta_wheel_RL = -vehicle.RL_corner.toe * ones(size(delta_steer_in));
+            delta_wheel_RR = vehicle.RR_corner.toe * ones(size(delta_steer_in));
 
             this.FL.delta = [this.FL.delta, delta_wheel_FL];
             this.FR.delta = [this.FR.delta, delta_wheel_FR];
@@ -195,7 +195,7 @@ classdef TireAnalysis < handle
             this.delta_steer = [this.delta_steer, delta_steer_in];
 
             [V_FL_est_in, V_FR_est_in, V_RL_est_in, V_RR_est_in] = ...
-                setup.expectedWheelSpeed(v_in, w_in, delta_steer_in);
+                vehicle.cornerWheelSpeedComponents(v_in, w_in, delta_steer_in);
 
             this.FL.V_est = [this.FL.V_est, V_FL_est_in];
             this.FR.V_est = [this.FR.V_est, V_FR_est_in];
@@ -203,10 +203,10 @@ classdef TireAnalysis < handle
             this.RR.V_est = [this.RR.V_est, V_RR_est_in];
 
             % Measured wheel speeds
-            V_FL_meas_in = handler.getWheelSpeedFL();
-            V_FR_meas_in = handler.getWheelSpeedFR();
-            V_RL_meas_in = handler.getWheelSpeedRL();
-            V_RR_meas_in = handler.getWheelSpeedRR();
+            V_FL_meas_in = handler.getChannel('WS_FL');
+            V_FR_meas_in = handler.getChannel('WS_FR');
+            V_RL_meas_in = handler.getChannel('WS_RL');
+            V_RR_meas_in = handler.getChannel('WS_RR');
 
             this.FL.V_meas = [this.FL.V_meas, V_FL_meas_in];
             this.FR.V_meas = [this.FR.V_meas, V_FR_meas_in];
