@@ -37,19 +37,19 @@ classdef MotecHandlerTest < matlab.unittest.TestCase
             % New handler will not have any mappings, so no data should be returned from
             % the query
             handler = MotecHandler(this.sample_log);
-            throttle = handler.getThrottle();
+            throttle = handler.getChannel('THROTTLE');
             this.verifyEmpty(throttle);
 
             % Add the mapping, should get some data back now
             handler.addChannelMappingEntry('THROTTLE', 'throttle_pedal');
-            throttle = handler.getThrottle();
+            throttle = handler.getChannel('THROTTLE');
             this.verifyNotEmpty(throttle);
         end
 
         function trimByTimeRange(this)
             % Determine the initial time range and some sample data to check as well
             t = this.configured_handler.getTimestamps();
-            throttle = this.configured_handler.getThrottle();
+            throttle = this.configured_handler.getChannel('THROTTLE');
 
             this.assertNotEmpty(t);
             this.assertNotEmpty(throttle);
@@ -63,7 +63,7 @@ classdef MotecHandlerTest < matlab.unittest.TestCase
             % Trim and extract new data
             this.configured_handler = this.configured_handler.trimTimeRange(t_start_trimmed, t_end_trimmed);
             t_trimmed = this.configured_handler.getTimestamps();
-            throttle_trimmed = this.configured_handler.getThrottle();
+            throttle_trimmed = this.configured_handler.getChannel('THROTTLE');
 
             % Check the timestamps are within bounds and that the throttle data has also
             % been trimmed to the same length
@@ -75,7 +75,7 @@ classdef MotecHandlerTest < matlab.unittest.TestCase
         function trimByTimestamps(this)
             % Determine the initial timestamps and some sample data to check as well
             t = this.configured_handler.getTimestamps();
-            throttle = this.configured_handler.getThrottle();
+            throttle = this.configured_handler.getChannel('THROTTLE');
 
             this.assertNotEmpty(t);
             this.assertNotEmpty(throttle);
@@ -84,9 +84,9 @@ classdef MotecHandlerTest < matlab.unittest.TestCase
             indices = logical(ones(size(t)));
             indices(2:2:end) = false;
 
-            this.configured_handler = this.configured_handler.trimTimeStamps(indices);
+            this.configured_handler = this.configured_handler.trimIndices(indices);
             t_trimmed = this.configured_handler.getTimestamps();
-            throttle_trimmed = this.configured_handler.getThrottle();
+            throttle_trimmed = this.configured_handler.getChannel('THROTTLE');
 
             this.verifyEqual(t_trimmed, t(indices));
             this.verifyEqual(throttle_trimmed, throttle(indices));
