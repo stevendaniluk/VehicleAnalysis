@@ -1,3 +1,4 @@
 *.m~
+*.mat
 *.asv
 *.DS_STORE
