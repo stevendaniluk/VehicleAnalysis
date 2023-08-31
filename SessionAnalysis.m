@@ -9,6 +9,12 @@
 %   - Plotting channels, with options of override plot attributes
 classdef SessionAnalysis
     properties (Access = public)
+        % Structure of all data channels, which are cell arrays with once cell
+        % for every dataset
+        datasets;
+        % Structure of data channels that have been post processed, which are cell arrays
+        % with one cell for every dataset
+        proc_datasets;
         % Structure of strings defining units for each channel
         units;
         % Structure with fields for each channel containing filtering parameter values
@@ -19,12 +25,6 @@ classdef SessionAnalysis
     end
 
     properties (Access = protected)
-        % Structure of all data channels, which are cell arrays with once cell
-        % for every dataset
-        datasets;
-        % Structure of all data channels with data from all datasets concatenated into
-        % a single array
-        all_data;
         % Count of how many datasets are present
         n_datasets = 0;
     end
@@ -73,15 +73,47 @@ classdef SessionAnalysis
             end
         end
 
+        % postProcess
+        %
+        % Performs some post processing on the data and writes the results to the
+        % proc_datasets member variable.
+        %
+        % To be implemented by derived classes.
+        function this = postProcess(this)
+            this.proc_datasets = this.datasets;
+        end
+
         % concatenateData
         %
-        % Combines all datasets for each channel into one. The result will be written to
-        % the 'all_data' member variable.
-        function this = concatenateData(this)
+        % Combines data from all datasets.
+        %
+        % OUTPUTS:
+        %   all_data: Struct with a field for ever channel with data from each dataset
+        %     concatenated together
+        function all_data = concatenateData(this)
+            all_data = struct;
+
             fields = fieldnames(this.datasets);
             for i = 1 : length(fields)
                 channel = fields{i};
-                this.all_data.(channel) = cell2mat(this.datasets.(channel));
+                all_data.(channel) = cell2mat(this.datasets.(channel));
+            end
+        end
+
+        % concatenateProcData
+        %
+        % Combines data from all post-processed datasets
+        %
+        % OUTPUTS:
+        %   all_data: Struct with a field for ever channel with data from each dataset
+        %     concatenated together
+        function all_data = concatenateProcData(this)
+            all_data = struct;
+
+            fields = fieldnames(this.proc_datasets);
+            for i = 1 : length(fields)
+                channel = fields{i};
+                all_data.(channel) = cell2mat(this.proc_datasets.(channel));
             end
         end
 
@@ -147,6 +179,31 @@ classdef SessionAnalysis
         function fig = plotTimeData(this, varargin)
             t = cell2mat(this.datasets.TIME);
             y = cell2mat(this.datasets.(varargin{1}));
+
+            args = {'TIME', varargin{:}};
+            fig = this.plotDataSingleSeries(t, y, args{:});
+        end
+
+        % plotProcData
+        %
+        % Plots post processed data.
+        %
+        % Variation of plotData() that uses 'proc_datasets' instead of 'datasets'. Input
+        % arguments are the same.
+        function fig = plotProcData(this, varargin)
+            x = cell2mat(this.proc_datasets.(varargin{1}));
+            y = cell2mat(this.proc_datasets.(varargin{2}));
+            fig = this.plotDataSingleSeries(x, y, varargin{:});
+        end
+
+        % plotProcTimeData
+        %
+        % Plots post processed data.
+        %
+        % Same as plotProcData() except the X axis series is Time
+        function fig = plotProcTimeData(this, varargin)
+            t = cell2mat(this.proc_datasets.TIME);
+            y = cell2mat(this.proc_datasets.(varargin{1}));
 
             args = {'TIME', varargin{:}};
             fig = this.plotDataSingleSeries(t, y, args{:});
