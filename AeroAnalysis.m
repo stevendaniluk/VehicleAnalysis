@@ -59,7 +59,7 @@ classdef AeroAnalysis < SessionAnalysis
             v_ground_smooth = smoothdata(this.datasets.GROUND_SPEED{n}, ...
                 'movmean', dt_smooth_v_ground / dt + 1);
 
-            this.datasets.ROAD_GRADE{n} = atan2(this.datasets.VZ{n}, v_ground_smooth);
+            this.datasets.ROAD_GRADE{n} = -atan2(this.datasets.VZ{n}, v_ground_smooth);
 
             grade_v_min = 20 / 3.6;
             this.datasets.ROAD_GRADE{n}(v_ground_smooth < grade_v_min) = 0;
@@ -71,10 +71,14 @@ classdef AeroAnalysis < SessionAnalysis
             AZ_end = this.datasets.VZ{n}(end) - this.datasets.VZ{n}(end - 1);
             this.datasets.AZ{n} = [diff(this.datasets.VZ{n}), AZ_end] / dt;
 
-            g_road = this.vehicle.gravity * cos(this.datasets.ROAD_GRADE{n});
-            this.datasets.AZ{n} = this.datasets.AZ{n} - g_road;
+            gz_road = -this.vehicle.gravity * cos(this.datasets.ROAD_GRADE{n});
+            this.datasets.AZ{n} = this.datasets.AZ{n} + gz_road;
 
             this = this.applyFilteringToData('AZ', n);
+
+            % Offset longitudinal acceleration by the road grade
+            gx_road = this.vehicle.gravity * sin(this.datasets.ROAD_GRADE{n});
+            this.datasets.AX{n} = this.datasets.AX{n} + gx_road;
 
             % Compute suspension pitch and rate
             this.units.PITCH_SUSP = 'rad';
