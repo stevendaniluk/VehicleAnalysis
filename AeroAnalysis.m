@@ -4,20 +4,12 @@ classdef AeroAnalysis < SessionAnalysis
         vehicle;
         % Structure with all computed aerodynamic forces and properties
         F_aero;
-        % Structure of data with fields for every channel and computed property that is
-        % a subset of "all_data", it is data that passes all filtering conditions
-        analysis_data;
     end
 
     properties (Access = protected)
         % List of track zones, defined by a start and end lap distance, that will be
         % considered as valid data points (empty means all data is valid)
         lap_zones = {};
-        % Cell array, one for each dataset, containing logical indices indicating which
-        % points in each dataset are considered valid
-        valid_dataset_pts;
-        % Logical indices of "all_data" defining which data is considered valid
-        valid_all_data_pts;
     end
 
     methods
@@ -104,6 +96,16 @@ classdef AeroAnalysis < SessionAnalysis
             this.datasets.WY{n} = this.datasets.WY{n} - this.datasets.WY_SUSP{n};
 
             this = this.computeAeroForcesForDataset(n);
+
+            % Compute heave rate
+            this.units.HEAVE = 'm';
+            this.datasets.HEAVE{n} = (RH_f + RH_r) / 2;
+            this = this.applyFilteringToData('HEAVE', n);
+
+            this.units.HEAVE_RATE = 'm/s';
+            HEAVE_RATE_end = this.datasets.HEAVE{n}(end) - this.datasets.HEAVE{n}(end - 1);
+            this.datasets.HEAVE_RATE{n} = -[diff(this.datasets.HEAVE{n}), HEAVE_RATE_end] / dt;
+            this = this.applyFilteringToData('HEAVE_RATE', n);
         end
 
         % addLapZone
@@ -119,17 +121,22 @@ classdef AeroAnalysis < SessionAnalysis
             this.lap_zones{n} = [d_start, d_end];
         end
 
-        function this = extractAnalysisData(this)
+        % postProcess
+        %
+        % TODO
+        function this = postProcess(this)
             % Go through every dataset finding the data points that are valid for each
             % condition we care about
-            this.valid_dataset_pts = cell(1, this.n_datasets);
+            fields = fieldnames(this.datasets);
+
             for i = 1 : this.n_datasets
-                this.valid_dataset_pts{i} = true(1, length(this.datasets.TIME{i}));
+                valid_pts = true(1, length(this.datasets.TIME{i}));
+
                 dt = this.datasets.TIME{i}(2) - this.datasets.TIME{i}(1);
 
                 % Found zones on the track where we want to process data
                 if ~isempty(this.lap_zones)
-                    zone_pts = false(size(this.valid_dataset_pts{i}));
+                    zone_pts = false(size(valid_pts));
                     for j = 1 : length(this.lap_zones)
                         d = this.lap_zones{j};
 
@@ -137,7 +144,7 @@ classdef AeroAnalysis < SessionAnalysis
                         this.datasets.LAP_DISTANCE{i}, dt, d(1), d(2), -inf, inf);
                         zone_pts = or(zone_pts_new, zone_pts);
                     end
-                    this.valid_dataset_pts{i} = and(zone_pts, this.valid_dataset_pts{i});
+                    valid_pts = and(zone_pts, valid_pts);
                 end
 
                 % Find when suspension pitch rate is low
@@ -149,79 +156,38 @@ classdef AeroAnalysis < SessionAnalysis
                     this.datasets.WY_SUSP{i}, dt, wy_susp_min, wy_susp_max, -inf, inf);
                 wy_susp_low_pts = MotecHandler.trimLogicalEdges(wy_susp_low_pts, ...
                     dt, wy_susp_trim_dt);
-                this.valid_dataset_pts{i} = and(wy_susp_low_pts, this.valid_dataset_pts{i});
-            end
+                valid_pts = and(wy_susp_low_pts, valid_pts);
 
-            this.valid_all_data_pts = cell2mat(this.valid_dataset_pts);
+                % Find when heave motion is low
+                heave_rate_max = 0.005;
+                heave_rate_trim_dt = 1.0;
+                heave_low_pts = MotecHandler.thresholdIndices(...
+                    this.datasets.HEAVE_RATE{i}, dt, -heave_rate_max, heave_rate_max, -inf, inf);
+                heave_low_pts = MotecHandler.trimLogicalEdges(heave_low_pts, ...
+                    dt, heave_rate_trim_dt);
+                valid_pts = and(heave_low_pts, valid_pts);
 
-            % Extract only the relevant fields for each channel from each dataset, then
-            % concatenate all datasets together
-            fields = fieldnames(this.datasets);
-            for i = 1 : length(fields)
-                channel = fields{i};
 
-                for n = 1 : this.n_datasets
-                    if ~isempty(this.datasets.(channel){n})
-                        this.analysis_data.(channel){n} = ...
-                            this.datasets.(channel){n}(this.valid_dataset_pts{n});
+                % % Find when the clutch is depressed
+                % clutch_dt = 3.0;
+                % clutch_data = this.datasets.CLUTCH{i} > 0.5;
+                % clutch_depressed_pts = MotecHandler.detectConditionPeriod(...
+                %     clutch_data, dt, clutch_dt);
+                % valid_pts = and(clutch_depressed_pts, valid_pts);
 
-                        % if strcmp(channel, 'TIME')
-                        %     % Recompute the time values to make all data points sequential
-                        %     dt = this.analysis_data.TIME{n}(2) - ...
-                        %         this.analysis_data.TIME{n}(1);
-                        %
-                        %     num_pts = length(this.analysis_data.TIME{n});
-                        %     this.analysis_data.TIME{n} = 0:dt:(dt * (num_pts - 1));
-                        %
-                        %     if n > 1
-                        %         % Shift forward to come after the previous dataset
-                        %         t_offset = dt + this.analysis_data.TIME{n - 1}(end);
-                        %         this.analysis_data.TIME{n} = ...
-                        %             this.analysis_data.TIME{n} + t_offset;
-                        %     end
-                        % end
+                % Retain only the valid points
+                for j = 1 : length(fields)
+                    channel = fields{j};
+
+                    if ~isempty(this.datasets.(channel){i})
+                        this.proc_datasets.(channel){i} = this.datasets.(channel){i}(valid_pts);
                     else
-                        this.analysis_data.(channel){n} = [];
+                        this.proc_datasets.(channel){i} = [];
                     end
                 end
-                this.analysis_data.(channel) = cell2mat(this.analysis_data.(channel));
             end
-
-            % Overwrite time to make all data points sequential
         end
 
-        % plotAnalysisData
-        %
-        % Variation of plotData() that uses 'analysis_data' instead of 'data'. Input
-        % arguments are the same.
-        function fig = plotAnalysisData(this, varargin)
-            x = this.analysis_data.(varargin{1});
-            y = this.analysis_data.(varargin{2});
-            fig = this.plotDataSingleSeries(x, y, varargin{:});
-        end
-
-        % plotAnalysisTimeData
-        %
-        % Same as plotAnalysisData() except the X axis series is Time
-        function fig = plotAnalysisTimeData(this, varargin)
-            t = this.analysis_data.TIME;
-            y = this.analysis_data.(varargin{1});
-
-            args = {'TIME', varargin{:}};
-            fig = this.plotDataSingleSeries(t, y, args{:});
-        end
-
-        % % plotDownforceVsSpeed
-        % %
-        % % INPUTS:
-        % %   None: Creates a new figure
-        % %   fig: fig is the figure handle to set as the current figure
-        % %   fig, subplot_id, fig is the figure handle, and subplot_id is the index of the
-        % %     subplot to make current
-        % function plotDownforceVsSpeed(this, varargin)
-        %     fig = this.initFigure(varargin{:});
-        %
-        % end
     end
 
     methods (Access = protected)
